@@ -42,8 +42,8 @@ export function setSharedFileRoute(route) {
 
 /**
  * Whether the signed-in user writes files through Foundry's own file API. Studio decides who may save. This decides
- * only which way the file travels: directly, or through the host route. Only staff go direct, because Foundry's
- * server creates folders for Assistant GMs and the Gamemaster alone, so a Trusted Player granted the upload
+ * only which way the file travels: directly, or through the host route. Only the Gamemaster and Assistant GMs go
+ * direct, because Foundry's server creates folders for those roles alone, so a Trusted Player granted the upload
  * permission still couldn't make the folder a first save needs.
  * @returns {boolean}
  */
@@ -60,8 +60,8 @@ function canBrowseFiles() {
 }
 
 /**
- * Foundry's permission test for the signed-in user. A user record without one, which a live client never has, keeps
- * Studio's earlier rule: it browses directly, and uploads directly only as Studio staff.
+ * Foundry's permission test for the signed-in user. Without `user.can` (never the case in a live client), browsing
+ * is allowed and uploading needs a Gamemaster or Assistant GM.
  * @param {string} permission
  * @returns {boolean}
  */
@@ -136,6 +136,9 @@ export async function fetchSidecarJson(folder, filename) {
  * callers save art and sidecars through it, and a silent failure would leave the studio believing it had saved.
  * A user who can't upload sends it through the host route, which decides again whether the file may be written
  * there, and a refusal throws a StudioRefusal.
+ *
+ * Foundry replaces an existing file of the same name. `{ notify: false }` doesn't silence a server error: Foundry
+ * still shows it as a notification before this throws.
  * @param {string} folder                 Destination folder.
  * @param {string} filename               File name.
  * @param {Blob} blob                     Contents.
@@ -220,7 +223,7 @@ const sidecarWrites = new Map();
 /**
  * Save a JSON sidecar: schemas.json and the workspace (fecc-asset-schema.mjs), or a category's tabs.json
  * (fecc-custom-tabs.mjs). Writes to one path run one at a time. While one runs, only the newest payload waits, and
- * a caller whose payload was replaced by a newer one settles when that newer write finishes.
+ * a caller whose payload was replaced by a newer one gets the result of that newer write.
  */
 export function writeSidecarJson(folder, filename, payload) {
   const json = JSON.stringify(payload, null, 2);
@@ -386,7 +389,7 @@ export async function pickClipboardImage() {
  *   projects/            project files, one per saved composition of a whole actor (projectFolder)
  *   export/              PNGs saved by the export panel (fecc-export-panel.mjs)
  *   meta/                schemas.json with each imported asset's default palette, and workspace-<userId>.json
- *                        with a staff user's open studio (fecc-asset-schema.mjs)
+ *                        with a GM's or Assistant GM's open studio (fecc-asset-schema.mjs)
 
  */
 
@@ -453,13 +456,9 @@ export function itemArtFolder() { return `${worldBase()}/${STUDIO_WORLD_FOLDERS.
 /* -------------------------------------------- */
 
 /**
- * The filename for an item's art in the world: its name, made filename-safe. An item keeps the plain name when the
- * file is new or already its own, and no other item references it. Otherwise the last three characters of the
- * item's uuid are added, which tells two items with the same name apart without a whole id in every filename. Item
- * art is never shared: a duplicate, a copy on an actor or a compendium import holding the same file gets its own,
- * so saving one never repaints the others. If another item already references the suffixed name too, the tail
- * grows one character at a time until it is free. An item already holding one of these names, with no other item
- * referencing it, keeps it, so its file doesn't move to a shorter name once the copy that forced it is gone.
+ * Pick a file name for an item's art: its name made filename-safe, or, when that file already exists or another item
+ * uses it, the name plus the last three or more characters of its uuid. An item keeps a name it already holds when
+ * no other item uses it, so saving one item never repaints another's art.
  * @param {Item} item                     Item being saved.
  * @param {string} [folder]               Folder the art lands in, listed to find the names already taken.
  * @returns {Promise<string>}

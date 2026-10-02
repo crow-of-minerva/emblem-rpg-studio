@@ -5,8 +5,8 @@
 /* -------------------------------------------- */
 
 /**
- * How many undo entries a view keeps. The limit is there to bound memory, since one entry can hold a whole layer's
- * pixels.
+ * How many undo entries a view keeps. A pixel entry holds a full copy of the layer, so the memory each entry costs
+ * grows with the layer's size, and a large spritesheet costs far more than a 128-pixel sprite.
  * @type {number}
  */
 const UNDO_LIMIT = 32;
@@ -42,8 +42,7 @@ export const HISTORY_DIRECTION = Object.freeze({ UNDO: 'undo', REDO: 'redo' });
  * stack depth can't stand in for it, because the stack stops growing at the limit. The counter rises with every
  * recorded edit and never goes down.
  *
- * Nothing here touches the DOM or a layer's pixels. The nudge timer calls the global `setTimeout` as a plain
- * function, because a browser throws when it is called as a method of any other object.
+ * Nothing here touches the DOM or a layer's pixels.
  */
 export class EditHistory {
   /* -------------------------------------------- */
@@ -78,7 +77,7 @@ export class EditHistory {
 
   /**
    * Record one user edit: add the entry, drop the oldest past the limit, clear the redo stack, and count the edit.
-   * Edits from the tools, the layers panel and the colour tray all reach this through CanvasView. An open run of
+   * Edits from the tools, the layers panel and the colour panel all reach this through CanvasView. An open run of
    * nudges happened first, so it is recorded ahead of this entry rather than after it.
    * @param {object} entry          The undo entry.
    */

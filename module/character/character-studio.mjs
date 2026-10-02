@@ -5,10 +5,10 @@
  * `api.openCharacterStudio`.
  *
  * This file is the window: the DOM, the controls and the document writes. The state it shows lives in
- * module/studio/: `tab-model.mjs` holds the bindings, the tabs and which of each is active, `destination.mjs` holds
- * where Submit would point the active tab, `workspace-writer.mjs` owns the background workspace write and its
- * timer, `lifecycle.mjs` owns every subscription this window installs, and `actor-admission.mjs` says which Actors
- * it will load.
+ * module/studio/: `tab-model.mjs` holds each loaded actor's tabs and which one is active (an `ActorBinding` per
+ * actor), `destination.mjs` holds where Submit would point the active tab, `workspace-writer.mjs` owns the
+ * background workspace write and its timer, `lifecycle.mjs` owns every hook and listener this window installs, and
+ * `actor-admission.mjs` says which Actors it will load.
  *
  * Each loaded actor keeps its own set of tabs. The switcher at the bottom swaps the whole strip, and closing an
  * actor's pip discards its tabs, asking first when one has unsaved work.
@@ -137,9 +137,8 @@ let _instance = null;
 /* -------------------------------------------- */
 
 /**
- * The close of the last studio window, from its `_preClose` until its `_onClose` has written the workspace and let
- * go of everything. An open waits for it, so it restores what the closing window wrote and never shares the
- * closing window's element id.
+ * Resolves once the closing studio window has saved its workspace and released everything. A new open waits for
+ * it, so it restores what that window saved and never shares its element id.
  * @type {Promise<void>|null}
  */
 let _closing = null;
@@ -234,10 +233,11 @@ function bust(path) {
 /**
  * The Emblem Character Studio: one window, several actors, and their art slots as tabs.
  *
- * An actor's art is addressed by a tuple of class, conditional entry and variant type, and each tab edits one such
- * destination. Every loaded actor keeps its own set of tabs, and the switcher at the bottom swaps the whole strip.
+ * An actor's art is addressed by a combination of class, conditional entry and variant type (a `tuple` in the
+ * code), and each tab edits one such destination. Every loaded actor keeps its own set of tabs, and the switcher at
+ * the bottom swaps the whole strip.
  *
- * Each tab has two canvases, avatar and token, but the avatar is editable only on the base tuple. Everywhere else
+ * Each tab has two canvases, avatar and token, but the avatar is editable only on the base destination. Elsewhere
  * it's a read-only mirror of the portrait, because an actor has one avatar however many token variants it has.
  *
  * The window is a singleton, and it saves its own workspace (which actors are loaded, which tabs are open, and any
@@ -250,25 +250,25 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Build the studio with no actors loaded.
    *
-   * Pane visibility and the side-rail tray state apply to the whole studio, not per tab, so hiding a pane or
-   * opening a tray applies everywhere and the layout doesn't shift as tabs are switched.
+   * Pane visibility and which side-rail panel is open apply to the whole studio, not per tab, so hiding a pane or
+   * opening a panel applies everywhere and the layout doesn't shift as tabs are switched.
    *
-   * The lifecycle and the workspace writer are built here and released in `_onClose`. One of the two holds
-   * everything this window subscribes to or schedules.
+   * The lifecycle holds every hook and listener, the workspace writer holds the save timer, and `_onClose` releases
+   * both.
    */
   constructor() {
     super({
       id: 'emblem-character-studio',
       position: { width: 1400, height: 915 }
     });
-    /** @type {Map<string, import('../studio/tab-model.mjs').ActorBinding>} actorId → binding */
+    /** @type {Map<string, import('../studio/tab-model.mjs').ActorBinding>} actorId → that actor's tabs */
     this._actors = new Map();
     /** @type {string|null} currently-active actor */
     this._activeActorId = null;
     // Whether each pane is hidden. Like the two fields below, it applies to every tab.
     this._avatarHidden = false;
     this._tokenHidden  = false;
-    // Which side-rail tray is open per side (colour, import, export or parts:<category>), or null when collapsed.
+    // Which side-rail panel is open per side (colour, import, export or parts:<category>), or null when collapsed.
     this._feccActiveTray = { avatar: null, token: null };
     // Layer-list height per side in pixels, set by the splitter between canvas and layers. Null keeps the
     // stylesheet's height.
@@ -295,6 +295,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
 
   static DEFAULT_OPTIONS = {
     classes: ['emblem-rpg-studio', 'emblem-character-studio'],
+    // A form, so Foundry cancels the page submit when Enter is pressed in the prefix field. There's no form
+    // handler: each control saves itself.
     tag: 'form',
     window: {
       title: 'Emblem Character Studio',
@@ -328,8 +330,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       togglePreview:    EmblemCharacterStudio.#onTogglePreview,
       savePreset:       EmblemCharacterStudio.#onSavePreset,
       loadPreset:       EmblemCharacterStudio.#onLoadPreset
-      // copyLayer and pasteLayer aren't listed: _mountToolPalettes' click listener handles them, and a second
-      // handler here would run each click twice.
+      // Tool-strip buttons (undo, redo, copyLayer, pasteSelection and the rest) aren't listed: _mountToolPalettes'
+      // click listener handles them, and a second handler here would run each click twice.
     }
   };
 
@@ -370,8 +372,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Whether the signed-in user may open the studio, or edit one Actor's art in it, telling them why not.
    *
-   * Staff always may. A Trusted Player needs the Gamemaster's allowlist and, for an Actor, ownership of it. A Player
-   * never may.
+   * A Gamemaster or Assistant GM always may. A Trusted Player needs the Gamemaster's allowlist and, for an Actor,
+   * ownership of it. A Player never may.
    * @param {Actor|null} [actor]            The Actor the opening is for.
    * @returns {boolean}
    */
@@ -409,8 +411,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * Open the studio on a specific destination. The system's Actor Control Panel and container sheets route in
    * through here, by way of its `openStudioForSlot` and `api.openCharacterStudio`.
    *
-   * The workspace restore runs first, so the routing lands on an already-open tab for this tuple instead of creating
-   * a duplicate beside it.
+   * The workspace restore runs first, so the routing lands on an already-open tab for this destination instead of
+   * creating a duplicate beside it.
    * @param {Actor} actor                                   Actor to edit.
    * @param {object} tuple                                  Destination tuple.
    * @returns {Promise<EmblemCharacterStudio|null>}
@@ -444,13 +446,13 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
 
   /**
    * Restore the workspace, once per open window. Without the guard, a later open from the control panel while the
-   * studio is already up would overwrite live state with the saved snapshot. The lifecycle holds the guard and
+   * studio is already up would overwrite live state with the saved copy. The lifecycle holds the guard and
    * clears it on close, so a reopened window restores again.
    * @returns {Promise<void>}
    */
   async _restoreWorkspaceIfNeeded() {
-    // The guard is set before the work starts, and a second open while the first restore is still running waits
-    // for it. Going ahead would load its actor fresh, and the restore would then skip that actor's drafts.
+    // Set the guard first, so a second open waits for the same restore instead of loading its actor before that
+    // actor's drafts are back.
     this._lifecycle.once('workspace-restore', () => { this._restoring = this._readWorkspace(); });
     await this._restoring;
   }
@@ -477,12 +479,12 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Rebuild actor bindings and tabs from a saved workspace.
+   * Rebuild the loaded actors and their tabs from a saved workspace.
    *
    * Clean canvas content isn't saved in the workspace. Each tab loads its destination art on activation instead, so
    * the workspace file stays small and the art on disk is what counts.
    *
-   * Actors no longer in the world are skipped, and a binding left with no tabs gets a base tab, so a restore never
+   * Actors no longer in the world are skipped, and an actor left with no tabs gets a base tab, so a restore never
    * produces an actor with nothing to edit.
    * @param {object} ws                     The persisted workspace.
    * @returns {Promise<void>}
@@ -535,14 +537,14 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
             sheetSize: Number(tabData.sheetSize) || null
           });
         }
-        // Unsaved pixel payloads, which _loadTabContent applies on first materialisation and then clears.
+        // Unsaved pixels from last session, which _loadTabContent applies when the tab's panes are first built.
         setPendingPixels(tab, 'avatar', tabData.avatarPixels ?? null);
         setPendingPixels(tab, 'token', tabData.tokenPixels ?? null);
       }
 
       if (binding.tabs.length === 0) this._createBaseTab(binding);
 
-      // A class tab renamed while the studio was closed leaves restored tuples naming the old class. The
+      // A class tab renamed while the studio was closed leaves restored tabs naming the old class. The
       // updateActor hook only covers renames made while it's open.
       this._repointRenamedClassTabs(actor);
 
@@ -592,8 +594,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       });
     }
     return {
-      // Version 2 saves pixels only for panes with unsaved work. Version 1 saved every materialized pane, and
-      // _restoreWorkspace and _loadTabContent still read that.
+      // Only panes with unsaved work carry pixels.
       version: 2,
       activeActorId: this._activeActorId,
       avatarHidden:  this._avatarHidden,
@@ -608,13 +609,14 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * What one pane adds to the workspace: only unsaved work. A clean pane's pixels already live on disk and on the
    * actor. A copy would make the workspace file bigger, would win over the stored art on the next open, and would
-   * leave the restored pane with no baseline, so an untouched tab would come back marked as edited.
+   * leave the restored pane with no saved state to compare against (its baseline), so an untouched tab would come
+   * back marked as edited.
    *
    * An emptied but unsaved pane saves an empty layer list, because null means nothing stored and would bring back
    * the art the user just deleted.
    *
-   * A pane not materialised this session passes its restored payload through untouched, so opening and closing the
-   * studio without visiting a tab doesn't discard its pending work. So does an empty pane whose load failed or
+   * A pane whose tab wasn't opened this session passes its restored draft through untouched, so opening and closing
+   * the studio without visiting a tab doesn't discard its pending work. So does an empty pane whose load failed or
    * hasn't finished.
    * @returns {object|null}
    */
@@ -736,6 +738,9 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     if (!root) return;
     const listen = (type, handler, capture) => this._lifecycle.listen(root, type, handler, capture);
 
+    // Set by a drag that starts inside the window, cleared by its dragend. This relies on dragend reaching this root:
+    // if the drag source is removed from the page first (a tab reorder rebuilds the strip in its drop handler), the
+    // flag stays set and Actor drops are ignored until another inside drag ends.
     let fromInside = false;
     listen('dragstart', () => { fromInside = true; }, true);
     listen('dragend',   () => { fromInside = false; }, true);
@@ -810,10 +815,10 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * Follow what happens to the documents and the session outside this window.
    *
    * The Actor Control Panel edits the same `system.art` data, so a class renamed there would otherwise leave the
-   * studio's tuples naming a class that no longer exists. A deleted Actor and a change of Studio access each
+   * studio's tabs naming a class that no longer exists. A deleted Actor and a change of Studio access each
    * reach the window through a hook too, and a browser refresh gets one last workspace write.
    *
-   * `this._lifecycle` holds every subscription, and `_onClose` releases them.
+   * `this._lifecycle` holds every hook and listener, and `_onClose` releases them.
    * @private
    */
   _installDocumentSync() {
@@ -826,8 +831,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       if (!foundry.utils.hasProperty(changes, 'system.art')) return;
       this._broadcastDesignAids();
     });
-    // An actor deleted from the world would leave a binding nothing can reach: its switcher pip and close button
-    // stop rendering, and every save against it fails. So it's unloaded.
+    // An actor deleted from the world would stay loaded where nothing can reach it: its switcher pip and close
+    // button stop rendering, and every save against it fails. So it's unloaded.
     this._lifecycle.hook('deleteActor', (actor) => {
       if (!this._actors.has(actor.id)) return;
       const binding = this._actors.get(actor.id);
@@ -854,7 +859,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Close the studio when the signed-in user loses access, keeping their drafts.
    *
-   * Closing saves the workspace, and anyone without staff access saves it to their own browser, so the unsaved
+   * Closing saves the workspace, and anyone below Assistant GM saves it to their own browser, so the unsaved
    * panes are still there if the Gamemaster allows them again.
    * @private
    */
@@ -890,7 +895,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Repaint the window title so the bound actor reads as the studio's subject.
+   * Repaint the window title so the active actor reads as the studio's subject.
    *
    * ApplicationV2 writes the title as escaped text, so the two-tone label can only exist as post-render DOM.
    * @private
@@ -931,9 +936,9 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Re-point tuples that name a class since renamed. Called from the `updateActor` hook and after a workspace
-   * restore, since a rename made between sessions leaves every restored tuple naming the old class, and the tab
-   * would edit a destination that no longer exists.
+   * Re-point tabs whose destination names a class since renamed. Called from the `updateActor` hook and after a
+   * workspace restore, since a rename made between sessions leaves every restored tab naming the old class, and the
+   * tab would edit a destination that no longer exists.
    * @private
    */
   _repointRenamedClassTabs(actor) {
@@ -1221,7 +1226,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * The active actor's binding, which is the state every strip and pane below is drawn from.
+   * The active actor's tabs and selections (its binding), which every strip and pane below is drawn from.
    * @type {import('../studio/tab-model.mjs').ActorBinding|null}
    */
   get _binding() {
@@ -1241,7 +1246,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * The class row the strip is filtered to, resolved against the actor the binding names.
+   * The class row the strip is filtered to, resolved against the actor those tabs belong to.
    * @returns {object}
    * @private
    */
@@ -1470,8 +1475,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * Create a tab, bound to a destination or scratch.
    *
    * The destination picks up its stored ids here (`withEntryIdentity`) from the live Actor, because `createTab` in
-   * studio/tab-model.mjs takes the tuple already resolved. `openTabForTuple` and `_repointTab` resolve it the same
-   * way.
+   * studio/tab-model.mjs takes the destination already resolved. `openTabForTuple` and `_repointTab` resolve it the
+   * same way.
    * @param {object} params
    * @param {boolean} params.bound          Whether it addresses a destination.
    * @param {object|null} params.tuple      That destination.
@@ -1635,8 +1640,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       packedW = Math.max(packedW, s.px + s.w);
     }
     const packedH = cy + rowH;
-    // The world stays square, as all of CanvasView assumes, and even-sized, so the baked layer needs no _evenPad
-    // and sits exactly on the world.
+    // Keep the sheet square with an even side, as the editor canvas expects.
     const side = Math.ceil(Math.max(PIXEL_GRID_SIZE, packedW + MARGIN, packedH + MARGIN) / 2) * 2;
 
     const baked = document.createElement('canvas');
@@ -1742,7 +1746,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Open a tab for every saved variant the binding does not already have one for.
+   * Open a tab for every saved variant the actor doesn't already have a tab for.
    *
    * Tabs cost little until they're activated, since the pane DOM and its canvases are built when first shown, so a
    * loaded actor opens with its whole set. This leaves the active tab alone, and the caller decides about focus.
@@ -1767,8 +1771,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Open a tab for every saved variant, and focus the first of them.
    *
-   * Loading an actor already does this, but variants saved from elsewhere (another client, the control panel) can
-   * appear while the studio is open.
+   * A newly loaded actor gets these tabs; this button adds any saved since (from another client or the control
+   * panel), or skipped by a workspace restore.
    * @returns {Promise<void>}
    */
   static async #onOpenAllVariants(event, target) {
@@ -1951,7 +1955,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Remove tabs from a binding and tear their views down.
+   * Remove tabs from an actor's set and tear their views down.
    *
    * Which tab is left showing, and the fresh scratch tab that replaces the last one closed, are `removeTabs` in
    * studio/tab-model.mjs.
@@ -2018,8 +2022,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    *
    * The entry selector is greyed when the class has no conditional entries, which is always true of the base class.
    *
-   * What the selectors end up proposing is stored on the binding (`setSelection`), and Submit resolves that instead
-   * of reading the controls again.
+   * What the selectors end up proposing is stored with the actor's tabs (`setSelection`), and Submit resolves that
+   * instead of reading the controls again.
    * @private
    */
   _syncTabControls() {
@@ -2129,8 +2133,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
 
   /**
    * Take the user's choice off a selector: refill the entry selector for the chosen class, and update what the
-   * buttons can do. This is the only place the controls are read, and it writes what it reads straight back onto the
-   * binding. It never touches the canvas.
+   * buttons can do. This is the only place the controls are read, and it stores what it reads straight away with
+   * the actor's tabs. It never touches the canvas.
    * @private
    */
   _onSelectorChanged() {
@@ -2195,7 +2199,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Show the active tab's pane and materialise it if this is its first activation.
+   * Show the active tab's pane, building it if this is its first activation.
    * @private
    */
   _syncTabContent() {
@@ -2217,8 +2221,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     this._syncViewOnlyAvatarMirror(tab);
     this._applyPaneVisibility(tab);
     this._applyFeccTrayActiveTab();
-    // Gate after the tray build, which creates fresh, enabled controls in the avatar rail. Gating first would let a
-    // read-only variant recolour and add parts into a canvas that is never saved.
+    // Disable read-only controls after the side panels are built, since building them creates enabled controls.
     this._applyEditabilityGate(tab);
     this._syncSaveButtonState(tab);
     // Brush colour is shared per side across tabs, so repaint this tab's swatches.
@@ -2259,7 +2262,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Materialise every tab and wait for their art to load, for the operations that act across all of them (Save All,
+   * Build every tab's panes and wait for their art to load, for the operations that act across all of them (Save All,
    * a spritesheet from all tabs, saving a project).
    * @returns {Promise<void>}
    * @private
@@ -2393,7 +2396,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * The markup for one side's rail of tray tabs.
+   * The markup for one side's rail of panel tabs.
    * @param {string[]} categories           Its parts categories.
    * @returns {string}
    * @private
@@ -2476,7 +2479,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     if (side === 'avatar') tab.avatarView = view;
     else tab.tokenView = view;
 
-    // Spritesheet tabs grow the token world to the stored sheet size before any pixel restore lands, and flag the
+    // Spritesheet tabs grow the token canvas to the stored sheet size before any pixel restore lands, and flag the
     // view so the importer refuses to import it again.
     if (side === 'token' && tab.isSpritesheet) {
       view.isSpritesheet = true;
@@ -2495,7 +2498,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Wire a tab's side rails, so their trays open and close.
+   * Wire a tab's side rails, so their panels open and close.
    * @private
    */
   _mountTabFeccPanels(tab) {
@@ -2516,8 +2519,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
           this._applyFeccTraySide(side);
         });
       });
-      // Only the active tab builds its panels, so materializing many tabs at once (Save All, palette broadcast,
-      // From All Tabs) doesn't build a parts library for every open tray on every tab.
+      // Only the active tab builds its panels, so building many tabs at once (Save All, palette broadcast,
+      // From All Tabs) doesn't build a parts library for every open panel on every tab.
       this._applyFeccTrayToTab(tab, side, { ensure: tab === this._activeTab });
     }
   }
@@ -2525,9 +2528,9 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Apply one side's open tray across every materialised tab.
+   * Apply one side's open panel across every built tab.
    *
-   * The open tray applies to the whole studio, not per tab, so switching tabs doesn't change the layout.
+   * The open panel applies to the whole studio, not per tab, so switching tabs doesn't change the layout.
    * @private
    */
   _applyFeccTraySide(side) {
@@ -2543,7 +2546,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Apply both sides' trays to the active tab.
+   * Apply both sides' open panels to the active tab.
    * @private
    */
   _applyFeccTrayActiveTab() {
@@ -2556,7 +2559,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Apply a side's tray state to one tab, building the panel if asked.
+   * Apply a side's open panel to one tab, building the panel if asked.
    * @param {object} [options]
    * @param {boolean} [options.ensure]              Build the panel if it does not exist.
    * @private
@@ -2580,8 +2583,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       pane.classList.add('is-active');
       if (ensure) {
         this._ensureFeccPanel(tab, side, active, pane);
-        // Freshly built controls start enabled, so a read-only avatar rail is gated again every time a tray opens
-        // on it.
+        // Freshly built controls start enabled, so a read-only avatar rail is disabled again every time a panel
+        // opens on it.
         if (side === 'avatar') this._applyEditabilityGate(tab);
       }
     }
@@ -2590,9 +2593,9 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Build one tray's panel the first time it opens. A tab has a tray per parts category per side, and building them
+   * Build a side panel the first time it opens. A tab has a panel per parts category per side, and building them
    * all up front would cost far more than most sessions use. The panel is stored on `tab.feccPanels[side]`.
-   * @param {string} tabKey                 Which tray.
+   * @param {string} tabKey                 Which panel.
    * @param {HTMLElement} paneEl            Its pane.
    * @private
    */
@@ -2600,7 +2603,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     const slot = tab.feccPanels[side];
     const view = viewOf(tab, side);
 
-    // Parts trays are grouped under slot.parts[category], so the colour panel can refresh all thumbnails on a
+    // Parts panels are grouped under slot.parts[category], so the colour panel can refresh all thumbnails on a
     // palette change and the import panel can refresh just the affected one.
     if (tabKey.startsWith('parts:')) {
       const category = tabKey.slice('parts:'.length);
@@ -2636,7 +2639,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
             // Recolour is an edit, so surface the unsaved-changes dot right away.
             this._syncTabsStrip();
           } else {
-            // With no FECC layer selected, this changes the side's default palette, so the parts trays preview
+            // With no FECC layer selected, this changes the side's default palette, so the parts panels preview
             // against the new palette.
             const bag = tab.feccPanels[side].parts ?? {};
             for (const tray of Object.values(bag)) tray.setPalette();
@@ -2663,8 +2666,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * The small editor interface the import panel gets for one tab. The panel needs to ask about tabs and palettes,
    * and giving it the studio itself would let it reach far more than it should.
    *
-   * Default names follow the side: a token import is named for its tuple, so it files itself into the right tray and
-   * sub-tab, while an avatar import is named for the actor and the slot it fills.
+   * Default names follow the side: a token import is named for its destination, so it files itself into the right
+   * Parts Library section and sub-tab, while an avatar import is named for the actor and the slot it fills.
    * @param {string} side           Which side the panel serves.
    * @returns {object}
    * @private
@@ -2685,7 +2688,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       // "Import to New Spritesheet" lays the batch out on a fresh sheet tab instead of adding layers to the source tab.
       createSheetFromCanvases: (canvases, layerOpts) =>
         this.createSheetFromCanvases(canvases, layerOpts),
-      // Every open tab's canvas view for a side, with its asset-name label, for the "From All Tabs" capture.
+      // Every open tab's canvas view for a side, with its asset-name label, for the "From All Tabs" import.
       allTabViews: (forSide) => {
         const binding = this._binding;
         if (!binding) return [];
@@ -2703,7 +2706,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Rebind the colour tray when the selected layer changes.
+   * Point the colour panel at the newly selected layer.
    * @param {object|null} layer     The newly selected layer.
    * @private
    */
@@ -2720,7 +2723,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Copy one palette onto every palette layer across every open tab. The colour tray's broadcast calls this.
+   * Copy one palette onto every palette layer across every open tab. The colour panel's broadcast calls this.
    * @param {string} scope                  'tokens' for token panes only, otherwise both panes.
    * @returns {Promise<void>}
    * @private
@@ -2782,6 +2785,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
           if (POINTER_TOOLS.includes(b.dataset.tool)) b.classList.toggle('is-active', b.dataset.tool === tool);
         });
       };
+      // CanvasView fires 'ets:toolchange' when a tool hotkey is pressed; detail.tool is the tool's name.
       view?.mountEl.addEventListener('ets:toolchange', (ev) => syncActive(ev.detail?.tool));
       toolsEl.querySelectorAll('.ete-tool-btn').forEach(btn => {
         btn.addEventListener('click', (ev) => {
@@ -2819,7 +2823,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * composition, which brings the layer stack back intact. Last, the flat image loads as a single rasterised layer,
    * which is all a destination without a composition has. `_materializeTab` starts this on a tab's first activation.
    *
-   * Whatever is loaded becomes the pane's clean baseline, so a freshly opened tab doesn't read as edited.
+   * Whatever is loaded is recorded as the pane's saved state, so a freshly opened tab doesn't read as edited.
    * @returns {Promise<void>}
    * @private
    */
@@ -2854,7 +2858,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     const restoredAvatar = await this._restoreLayerPixels(tab, 'avatar');
 
     // Saved spritesheets load from the actor's `tokenSheets` flag, as bound tabs load from `tokenComp` below.
-    // Workspace pixels, when present, are unsaved edits and win, with no baseline so they still show as unsaved.
+    // Workspace pixels, when present, are unsaved edits and win, with no saved state recorded so they still show as
+    // unsaved.
     if (tab.isSpritesheet && !restoredToken && tab.sheetId && tab.tokenView) {
       const rec = this._tabActor(tab)?.getFlag(STUDIO_FLAG, 'tokenSheets')?.[tab.sheetId];
       if (rec?.payload) {
@@ -2883,8 +2888,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
         tab.tokenNeedsMigrate = false;
       } else if (tokenPath) {
         const r = await this._loadArtAsPixel(tab.tokenView, tokenPath);
-        // Loaded art always gets a baseline, so an untouched pane never shows as changed. Art reduced from a
-        // non-pixel source is flagged for a pixel-perfect re-export on the next save instead.
+        // Loaded art always has its saved state recorded, so an untouched pane never shows as changed. Art reduced
+        // from a non-pixel source is flagged for a pixel-perfect re-export on the next save instead.
         tab.initialToken = r?.layer ? snapshotInitial(tab.tokenView) : null;
         tab.tokenNeedsMigrate = !!(r?.layer && r.converted);
         if (r?.failed) recordLoadFailure(tab, 'token');
@@ -2901,7 +2906,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       if (r?.failed) recordLoadFailure(tab, 'avatar');
     }
 
-    // Layers moved here before the tab was materialised apply after the destination load, so the load's
+    // Layers moved here before the tab's panes were built apply after the destination load, so the load's
     // clearLayers doesn't wipe them.
     this._applyPendingMovedLayers(tab);
   }
@@ -3048,8 +3053,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * Saved alongside the flat image, not instead of it. The game renders the image, and the composition lets the
    * studio reopen the art as editable layers linked to their palettes.
    * @param {object} tuple                  The destination.
-   * @param {object|null} payload           Captured editable layers, or null to clear them.
-   * @returns {Promise<boolean>}            Whether the captured composition was stored.
+   * @param {object|null} payload           The editable layers, or null to clear them.
+   * @returns {Promise<boolean>}            Whether the layer stack was stored.
    * @private
    */
   async _persistTokenComposition(actor, tuple, payload) {
@@ -3189,7 +3194,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Disable the avatar pane on every tab but the base one.
    *
-   * An actor has one portrait however many token variants it has, so only the base tuple may write it. Everywhere
+   * An actor has one portrait however many token variants it has, so only the base destination may write it. Everywhere
    * else the pane is a read-only mirror. CSS blocks pointer input instead of the canvas being removed, so the layout
    * stays the same across tabs.
    * @private
@@ -3199,7 +3204,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     const avatarEditable = tab.bound ? avatarEditableFor(tab.tuple) : false;
     tab.domRoot.classList.toggle('avatar-readonly', !avatarEditable);
 
-    // Only controls this gate disabled are enabled again. The colour panel disables its own paste, reset and
+    // Only controls this method disabled are enabled again. The colour panel disables its own paste, reset and
     // asset-default buttons by state, and those must stay as the panel left them.
     const avatarPane  = tab.avatarPane;
     const avatarRail  = tab.domRoot.querySelector('.fecc-side[data-fecc-side="avatar"]');
@@ -3218,7 +3223,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     };
     setDisabled(avatarPane, !avatarEditable);
     setDisabled(avatarRail, !avatarEditable);
-    // Canvas pointer interaction is gated by CSS (`.avatar-readonly .ete-canvas-mount`).
+    // Canvas pointer input is blocked by CSS (`.avatar-readonly .ete-canvas-mount`).
   }
 
   /* -------------------------------------------- */
@@ -3226,7 +3231,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * The image the read-only avatar mirrors show.
    *
-   * The live flattened avatar of a materialised base tab where there is one, unsaved edits and an emptied canvas
+   * The live flattened avatar of the base tab where its panes are built, unsaved edits and an emptied canvas
    * included, since the saved portrait would show art the user has already changed. Otherwise the actor's saved
    * portrait.
    * @returns {string}
@@ -3265,7 +3270,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Overlay the mirror over a non-editable tab's dormant avatar canvas.
+   * Overlay the mirror over a non-editable tab's unused avatar canvas.
    *
    * The editable base tab keeps its real canvas and has the overlay removed instead.
    * @private
@@ -3503,7 +3508,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     tuple = withEntryIdentity(game.actors.get(actorId), tuple);
     const binding = this._actors.get(actorId);
     if (!binding) return;
-    // Move the class row to the routed tuple, as #onSelectTab does. Otherwise the row would stay on whatever it
+    // Move the class row to the routed destination, as #onSelectTab does. Otherwise the row would stay on whatever it
     // showed before ('Default' on a first load), and a remembered row would hide the new tab.
     setActiveRow(binding, { classKey: tuple?.classKey, type: tuple?.type });
     const existing = findTabForTuple(binding, tuple);
@@ -3549,7 +3554,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
 
     const tokenSideAction  = await this._planPaneSwitch(tab, 'token',  tokenView,  newTokenPath, !skipPrompt);
     if (tokenSideAction === 'cancel') return;
-    // There is one profile avatar, so its path is the same for every tuple and only its editability changes. The
+    // There is one profile avatar, so its path is the same for every destination and only its editability changes. The
     // avatar pane switches only when the tab moves between the base destination and a variant.
     const wasEditable = tab.bound ? avatarEditableFor(tab.tuple) : false;
     const willEdit    = avatarEditableFor(newTuple);
@@ -3563,7 +3568,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       if (avatarAction === 'cancel') return;
     }
 
-    // Bind before the side effects so the loads below see the new tuple. Until each pane's load finishes, its
+    // Point the tab at the new destination first, so the loads below see it. Until each pane's load finishes, its
     // cleared canvas is marked as loading, so a workspace write in between doesn't save it as a deletion.
     const tokenLoaded = markPaneLoading(tab, 'token');
     const avatarLoaded = avatarChanges ? markPaneLoading(tab, 'avatar') : () => {};
@@ -3630,16 +3635,16 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     }
     if (action === 'skip') return;
     if (action === 'keep') {
-      // The art on screen was never written to this empty destination. Dropping the old baseline marks the pane
+      // The art on screen was never written to this empty destination. Dropping the old saved state marks the pane
       // as changed, so Save exports it instead of reusing a stored path that doesn't exist.
       clearBaseline(tab, side);
       return;
     }
     if (action === 'load' || action === 'purge') {
-      // Submit changes the destination, which isn't an edit, so start with a clean undo stack.
+      // Clear the canvas without adding an undo step.
       view.clearLayers({ skipHistory: true });
       clearLoadFailure(tab, side);
-      // Same load order and baseline rules as _loadTabContent.
+      // Same load order and saved-state rules as _loadTabContent.
       if (side === 'token' && await this._restoreActorComposition(tab, 'token')) {
         setBaseline(tab, 'token', snapshotInitial(view));
       } else if (destPath) {
@@ -3813,7 +3818,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Save every tab that has something to save.
    *
-   * Every tab is materialised first, since a tab not opened this session has no view to read and would otherwise be
+   * Every tab's panes are built first, since a tab not opened this session has no view to read and would otherwise be
    * skipped.
    * @returns {Promise<void>}
    */
@@ -3916,7 +3921,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Capture the destination, the exported pixels and the editable layers before any save awaits. The file name is
+   * Record the destination, the exported pixels and the editable layers before any save awaits. The file name is
    * chosen later, when the file is written.
    */
   _captureSaveRequest(tab, side, { sheet = false, empty = false } = {}) {
@@ -3927,6 +3932,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     const payload = side === 'token' ? structuredClone(this._serializeLayerPixels(view)) : null;
     const destination = Object.freeze({ tuple, isSpritesheet: !!tab.isSpritesheet, sheetId: tab.sheetId });
     const needsMigrate = side === 'avatar' ? tab.avatarNeedsMigrate : tab.tokenNeedsMigrate;
+    // Art unchanged since it was loaded from a file: skip the upload and point the destination at that file again.
     const reuse = !empty && !sheet && !needsMigrate && viewPristine(view, baselineOf(tab, side))
       ? storedPathForSide(actor, tuple, side) : '';
     const image = sheet && payload ? this._cropToContent(view.exportToCanvas(view.size)) : null;
@@ -3944,7 +3950,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Take the saved state as the pane's baseline, but only while the tab still addresses that destination
+   * Record the saved state as the pane's new clean state, but only while the tab still addresses that destination
    * (`acceptSaveBaseline` in studio/tab-model.mjs). Every tab save (Save, Save All and Save Sheet)
    * passes through here, so this is also where the side's FeccColourPanel drops the swatches the user enabled but
    * never painted with.
@@ -4079,7 +4085,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Push a saved change onto the board and the interface without a reload.
+   * Push a saved change onto the map and the interface without a reload.
    * @param {string} cleanPath              The saved path.
    * @returns {Promise<void>}
    * @private
@@ -4168,8 +4174,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * The unit folder an actor's art saves into, named from a prefix. The publication host computes the same folder
-   * (`actorUnitFolderName` in variants.mjs).
+   * The unit folder an actor's art saves into, named from a prefix. The GM's client computes the same folder when it
+   * saves a Trusted Player's file (`actorUnitFolderName` in variants.mjs).
    */
   _unitFolderName(actor, stem = this._filePrefixFor(actor)) {
     return actorUnitFolderName(actor, game.actors, stem);
@@ -4257,11 +4263,10 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Point a destination's token slot at a path in `system.art`. The system derives a Character's prototype token
    * from that art, and a base clear resets it to the portrait as the Actor Control Panel's clear does. An actor type
-   * without `system.art.tokens` keeps its base token on the prototype token alone. Called by `_saveSide` and
-   * `_clearSide`.
+   * without `system.art.tokens` keeps its base token on the prototype token alone.
    * @param {object} tuple                          The destination.
    * @param {object} [options]
-   * @param {boolean} [options.refresh]             Refresh the board afterwards.
+   * @param {boolean} [options.refresh]             Refresh the map afterwards.
    * @returns {Promise<boolean>}                    false when the destination no longer exists on the actor.
    * @private
    */
@@ -4316,7 +4321,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Point the actor's portrait at a path.
    * @param {object} tuple                  The destination.
-   * @returns {Promise<boolean>}            false when the tuple isn't the base destination.
+   * @returns {Promise<boolean>}            false when the destination isn't the base one.
    * @private
    */
   async _writeAvatarPath(actor, tuple, path) {
@@ -4346,7 +4351,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
     }
     tab.avatarView = null;
     tab.tokenView  = null;
-    // Side panels register in module-level sets (the live-trays registry, the colour clipboard listeners) that
+    // Side panels register in module-level sets (the parts library's `_liveTrays`, the colour clipboard listeners) that
     // outlive the DOM. Dropping the markup alone would leave them subscribed and keep this tab's views alive.
     for (const side of ['avatar', 'token']) {
       const slot = tab.feccPanels[side];
@@ -4450,7 +4455,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * The active actor's design-aid state (gridlines, the bar guide and the scale preview), kept on its binding and
+   * The active actor's design-aid state (gridlines, the bar guide and the scale preview), kept with its tabs and
    * shared by all of its tabs. null when no actor is loaded.
    * @type {object|null}
    */
@@ -4464,7 +4469,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Run something over every materialised view.
+   * Run something over every built view.
    * @param {Function} cb           Receives the view, its side and its tab.
    * @private
    */
@@ -4508,7 +4513,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /**
    * Apply the design aids to one view.
    *
-   * The preview uses the destination's own offset and scale, so it shows the art at the size and position the board
+   * The preview uses the destination's own offset and scale, so it shows the art at the size and position the map
    * draws it.
    * @param {object|null} [tab]             Its tab.
    * @private
@@ -4619,7 +4624,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Save every tab of the active actor as a project file (fecc-presets.mjs). Staff and listed Trusted Players.
+   * Save every tab of the active actor as a project file (fecc-presets.mjs). Gamemasters, Assistant GMs and allowed
+   * Trusted Players.
    * @returns {Promise<void>}
    */
   static async #onSavePreset(event, target) {
@@ -4633,7 +4639,8 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Load a project file onto the active actor, rebuilding its tabs. Staff and listed Trusted Players.
+   * Load a project file onto the active actor, rebuilding its tabs. Gamemasters, Assistant GMs and allowed Trusted
+   * Players.
    * @returns {Promise<void>}
    */
   static async #onLoadPreset(event, target) {
@@ -4827,7 +4834,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Apply layers moved into a tab that had not been materialised yet.
+   * Apply layers moved into a tab whose panes hadn't been built yet.
    *
    * Held pending rather than applied immediately, since the destination has no view until it is first activated.
    * @private
@@ -4861,7 +4868,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
       this._syncAll();
       this._appendClipToView(viewOf(targetTab, side), clip);
     } else {
-      // Queued, so _loadTabContent applies it after its own clear and load. Selecting the tab materialises it.
+      // Queued, so _loadTabContent applies it after its own clear and load. Selecting the tab builds it.
       queueMovedLayer(targetTab, side, clip);
       selectTab(this._binding, targetTab.id);
       this._syncAll();
@@ -4966,8 +4973,9 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
   /* -------------------------------------------- */
 
   /**
-   * Close the studio, except when Foundry closes windows on Escape (`options.closeKey`). The studio then stays open,
-   * so it closes only from its own close button or a direct call.
+   * Close the studio, except when Foundry closes windows on Escape (`options.closeKey`). Escape is the editor's
+   * cancel key (it drops a selection or a floating move), so the studio closes only from its own close button or a
+   * direct call.
    * @returns {Promise<Application>}
    */
   async close(options = {}) {
@@ -5007,7 +5015,7 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
    * Scratch tabs are saved to the workspace first, so closing the whole studio doesn't prompt the way closing one
    * scratch tab does. Nothing is lost, and they come back on the next open.
    * @returns {Promise<void>}
-   * @private
+   * @protected
    */
   async _onClose() {
     try {
@@ -5038,7 +5046,10 @@ export class EmblemCharacterStudio extends HandlebarsApplicationMixin(Applicatio
 /* -------------------------------------------- */
 const actorSaves = new Map();
 
-/** Keep each actor's image and document writes in request order, including after a failed save. */
+/**
+ * Keep each actor's image and document writes in request order on this client, including after a failed save.
+ * Saves made from another client aren't ordered against these.
+ */
 function queueActorSave(actor, operation) {
   const key = actor.uuid ?? actor.id;
   const previous = actorSaves.get(key) ?? Promise.resolve();

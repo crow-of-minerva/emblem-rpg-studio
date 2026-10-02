@@ -47,14 +47,15 @@ const notify = createStudioNotifier(import.meta.url);
 const DEFAULT_TAB = 'default';
 
 /**
- * Key of the unfiled pane, labelled Default in the idle, dodge and attack trays and Custom in the others.
+ * Key of the pane for parts not filed under a sub-tab, labelled Default in the idle, dodge and attack trays and
+ * Custom in the others.
  * @type {string}
  */
 const CUSTOM_TAB  = 'custom';
 
 /**
- * The manifest tag of shipped parts shown in the unfiled pane. In the idle, dodge and attack categories, a shipped
- * part that fits no weapon sub-tab carries it, which keeps it apart from the untagged pack in the FECC tray.
+ * The manifest tag of shipped parts shown in the Default/Custom pane. In the idle, dodge and attack categories, a
+ * shipped part that fits no weapon sub-tab carries it, which keeps it apart from the untagged pack in the FECC tray.
  * @type {string}
  */
 const CUSTOM_SHIPPED_TAB = 'Default';
@@ -430,11 +431,11 @@ export class FeccPartsLibrary extends Panel {
   }
 
   /**
-   * The sub-tabs this tray shows. The FECC tray has a single pane. The idle, dodge and attack trays show the unfiled
-   * pane (labelled Default), the built-in weapon tabs and then any user tabs, and their untagged shipped parts are in
-   * the FECC tray instead. Every other tray, avatar trays included, shows Default (untagged shipped parts), Custom
-   * (the unfiled pane) and then any user tabs. A built-in tab name recorded in tabs.json is skipped, so it doesn't
-   * show twice.
+   * The sub-tabs this tray shows. The FECC tray has a single pane. The idle, dodge and attack trays show Default
+   * (parts not filed under a sub-tab), the built-in weapon tabs and then any user tabs, and their untagged shipped
+   * parts are in the FECC tray instead. Every other tray, avatar trays included, shows Default (untagged shipped
+   * parts), Custom (parts not filed under a sub-tab) and then any user tabs. A built-in tab name recorded in
+   * tabs.json is skipped, so it doesn't show twice.
    * @returns {object[]}
    */
   _currentTabs() {
@@ -458,7 +459,7 @@ export class FeccPartsLibrary extends Panel {
   /** The sub-tabs this tray shows (_currentTabs). */
   get tabs() { return this._currentTabs(); }
 
-  /** What the unfiled pane is called in this tray. */
+  /** What the pane for parts not filed under a sub-tab is called in this tray: Default or Custom. */
   _unfiledTabLabel() {
     return SUBTAB_CATEGORIES.includes(this.category) ? 'Default' : 'Custom';
   }
@@ -550,8 +551,8 @@ export class FeccPartsLibrary extends Panel {
   /**
    * Fill the grid for the active sub-tab. Each shipped part shows in exactly one pane, picked by its manifest tag:
    * untagged parts in the Default pane (or the FECC tray, for idle, dodge and attack), parts tagged Default in the
-   * unfiled pane, and parts tagged with a sub-tab name in that sub-tab. The world's own parts follow, in the unfiled
-   * pane or in the sub-tab tabs.json files them under.
+   * Default/Custom pane (parts not filed under a sub-tab), and parts tagged with a sub-tab name in that sub-tab. The
+   * world's own parts follow, in the Default/Custom pane or in the sub-tab tabs.json files them under.
    *
    * A world part with the same name as a shipped part is left out. tabs.json renames the rest and hides the ones
    * marked deleted.
@@ -804,8 +805,7 @@ export class FeccPartsLibrary extends Panel {
    * layer, which keeps the old back layer's palette, so the pair always match.
    *
    * The image is downloaded before anything is removed, so a failed download leaves the old part in place. One undo
-   * entry covers the whole swap, because _removeLayersByType changes the layer list without recording an undo step,
-   * and without it an undo would remove the new part and leave the old one gone for good.
+   * step covers the swap, since removing the old layers records none.
    * @param {object} oldLayer               Layer being replaced.
    * @param {object} entry                  The new part.
    * @param {string} url                    Its URL.
@@ -901,7 +901,8 @@ export class FeccPartsLibrary extends Panel {
   /**
    * Add the hair-back part matching a hair part, just below the hair layer. The match is by name: a shipped
    * hair-back with the same name first, then a world hair-back part named like the hair's file. A hair part with no
-   * match gets no back layer.
+   * match gets no back layer. The importer files a name with a hair-back word as hair-back, so an imported pair has
+   * different file names and only matches once the hair-back is renamed to the hair's name.
    * @param {object} hairEntry                      The hair part.
    * @param {object} hairLayer                      The layer it produced.
    * @param {object|null} [inheritedPalette]        Palette to carry over.
@@ -1005,7 +1006,8 @@ export class FeccPartsLibrary extends Panel {
   /**
    * Open a part's right-click menu. A shipped part belongs to the Studio module, so it can only be copied into the
    * world's library. A world part can be moved to another sub-tab or tray, renamed or deleted. Every one of these
-   * writes the world's library, which only staff and listed Trusted Players can, so nobody else gets the menu.
+   * writes the world's library, which only the GM, assistant GMs and listed Trusted Players can, so nobody else gets
+   * the menu.
    * @param {object} entry                  The part.
    * @param {string} url                    Its URL.
    */
@@ -1067,8 +1069,8 @@ export class FeccPartsLibrary extends Panel {
   }
 
   /**
-   * Open the right-click menu of a sub-tab a user made: rename or delete. Staff and listed Trusted Players only, like
-   * the library it changes.
+   * Open the right-click menu of a sub-tab a user made: rename or delete. The GM, assistant GMs and listed Trusted
+   * Players only, like the library it changes.
    */
   _openSubTabMenu(name, clientX, clientY) {
     if (!hasStudioToolAccess()) return;
@@ -1086,7 +1088,7 @@ export class FeccPartsLibrary extends Panel {
   /*  Part Management                             */
   /* -------------------------------------------- */
 
-  /** File a world part under another sub-tab, or under the unfiled pane when `targetTab` is null. */
+  /** File a world part under another sub-tab, or under the Default/Custom pane when `targetTab` is null. */
   async _moveTokenToTab(entry, targetTab) {
     await setEntryTab(this.category, entry.entryKey, targetTab);
     await refreshAllTraysForCategory(this.category);
@@ -1119,7 +1121,9 @@ export class FeccPartsLibrary extends Panel {
 
   /**
    * Move a world part to another tray. The image is uploaded into the new category's folder and hidden in the old
-   * one, since Foundry's file API can't move or delete files. Its display name comes along, and it lands unfiled.
+   * one, since Foundry's file API can't move or delete files. Its display name comes along, and it lands outside any
+   * sub-tab. The PNG is copied as it is, with its codes unconverted, so a move between avatar trays whose part types
+   * read codes differently (face or accessory against body, hair or hair-back) changes its colours.
    * @param {object} entry                  The part.
    * @param {string} targetCategory         Destination category.
    * @returns {Promise<void>}
@@ -1175,7 +1179,7 @@ export class FeccPartsLibrary extends Panel {
     await refreshAllTraysForCategory(this.category);
   }
 
-  /** Delete a sub-tab a user made, after confirming. Its parts move to the unfiled pane, and no file is deleted. */
+  /** Delete a sub-tab a user made, after confirming. Its parts move to the Default/Custom pane. No file is deleted. */
   async _deleteSubTab(name) {
     const confirmed = await foundry.applications.api.DialogV2.confirm({
       window: { title: 'Delete Sub-Tab' },

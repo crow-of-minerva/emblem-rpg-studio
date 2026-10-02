@@ -155,7 +155,7 @@ class MultiPuzzleClassifier {
     this.feccType = feccType;
     this.panels = [];
     // Save to the Parts Library, or keep the layers for this session only.
-    // Only staff and listed Trusted Players can write the library.
+    // Only the GM, assistant GMs and listed Trusted Players can write the library.
     this.permanent = hasStudioToolAccess();
 
     // The drag in progress, or null. Shapes:
@@ -379,8 +379,8 @@ class MultiPuzzleClassifier {
   }
 
   /**
-   * Remove a panel, for its × button. Its region records stay in `assignments`, where coverage and the results
-   * ignore them.
+   * Remove a panel, for its × button. Its region records stay in `assignments`. Coverage and the results skip them,
+   * but the palette boxes still show their swatches.
    */
   removePanel(panel) {
     panel.panelEl?.remove();
@@ -833,11 +833,11 @@ class MultiPuzzleClassifier {
   }
 
   /**
-   * The connected patch of a seed pixel's exact colour, joined through the four straight neighbours. The match is
+   * The connected patch of a starting pixel's exact colour, joined through the four straight neighbours. The match is
    * exact because these are indexed sprites: any tolerance would spread the patch into the next shade of the same
    * material, which is the very difference being assigned.
    * @param {object} panel                  The panel.
-   * @param {number} start                  Seed pixel.
+   * @param {number} start                  Starting pixel.
    * @param {number} k                      Its colour key.
    * @returns {Set<number>}
    */
@@ -1024,8 +1024,8 @@ class MultiPuzzleClassifier {
   }
 
   /**
-   * Add a panel from an image pasted anywhere in the document while the dialog is open, unless a text field has
-   * focus.
+   * Add a panel from an image pasted anywhere in the document while the dialog is open, unless an input or textarea
+   * has focus. A rich-text editor doesn't count, so an image pasted into one becomes a panel here instead.
    * @param {Event} e                       Paste event.
    * @returns {Promise<void>}
    */
@@ -1129,9 +1129,9 @@ class MultiPuzzleClassifier {
 /* -------------------------------------------- */
 
 /**
- * Open the Sprite Importer dialog. FeccImportPanel calls it for each of its buttons. It takes any number of seeds,
- * and the empty importer opens with none, for the user to paste or add files.
- * @param {object[]} initial              Seeds from _seedFromSource: `{ canvas, counts, name, placement }`.
+ * Open the Sprite Importer dialog. FeccImportPanel calls it for each of its buttons. It takes any number of starting
+ * images, and the empty importer opens with none, for the user to paste or add files.
+ * @param {object[]} initial              Starting images from _seedFromSource: `{ canvas, counts, name, placement }`.
  * @param {object} [options]
  * @param {string} [options.feccType]     Part type the imports are expected to become. It hides the palettes that
  *   type can't use and steers Auto-classify Rest.
@@ -1145,7 +1145,8 @@ export async function showManualClassifyDialog(initial, { feccType = 'body' } = 
     const finish = v => { if (!settled) { settled = true; resolve(v); } };
 
     // Both import buttons wait for a complete placement and differ only in
-    // `toSheet`.
+    // `toSheet`. DialogV2 closes after any button's callback, whatever it
+    // returns, so the disabled buttons are what keep the work from being lost.
     const collect = (toSheet) => {
       if (!classifier) return false;
       if (!classifier.isComplete()) {

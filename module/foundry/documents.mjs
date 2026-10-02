@@ -67,7 +67,7 @@ export async function actorFromDropPayload(data) {
 
 /**
  * Whether an actor is a world Actor, not a token's synthetic actor or a compendium entry. Character Studio loads
- * only world Actors, since it keys its bindings and art folders by the Actor's id.
+ * only world Actors, since it keys its per-Actor state and art folders by the Actor's id.
  */
 export function isWorldActor(actor) {
   return !!actor && !actor.isToken && !actor.pack && (!actor.uuid || actor.uuid === 'Actor.' + actor.id);
@@ -80,9 +80,8 @@ export function isWorldActor(actor) {
 /**
  * The update that points an item at art Sprite Studio just saved.
  *
- * The pixel-art marker goes in the system's flag scope, because that's where it's read:
- * `getFlag(SYSTEM_ID, 'pixelArt')` in Emblem RPG's item, class and Object sheets and in the trade projection behind
- * its trade menu. They draw marked art without smoothing.
+ * The pixel-art marker goes in the system's flag scope, because that's where Emblem RPG's item and class sheets
+ * read it (`getFlag(SYSTEM_ID, 'pixelArt')`). They draw marked art without smoothing.
  * @param {string} path               Where the art was stored.
  * @returns {object}                  A flat update payload for `Document#update`.
  */

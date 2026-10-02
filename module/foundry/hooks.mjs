@@ -24,6 +24,7 @@ import { registerStudioPublication } from './publication-transport.mjs';
 export function installStudioHooks() {
   observeStudioErrors();
   Hooks.once('init', registerStudio);
+  // socketlib fires this inside its own `init` hook, so it has to be registered at load, before `init` runs.
   Hooks.once('socketlib.ready', registerStudioPublication);
   Hooks.on('preUpdateActor', syncTokenTabRenames);
   Hooks.on('preCreateSetting', vetoAllowlistWrite);

@@ -35,7 +35,7 @@ const slugify = (s) => slugifyUnderscore(s, 'export');
  * The Export tray of Character Studio's side rail (built by EmblemCharacterStudio._ensureFeccPanel). It copies the
  * canvas, upscales it with nearest-neighbour sampling and uploads a PNG to `worlds/<world>/emblem/export/`. Nothing
  * is re-composed, because the view's canvas already holds the recoloured composite, and the grid, cutoff and
- * projection overlays are drawn on separate canvases, so they never appear in an export.
+ * scale-preview overlays are drawn on separate canvases, so they never appear in an export.
  */
 export class FeccExportPanel extends Panel {
   /**
@@ -107,7 +107,8 @@ export class FeccExportPanel extends Panel {
   /**
    * Draw the canvas at the chosen scale and upload it, for the export buttons. The output side is capped at 8192
    * pixels, because a spritesheet canvas spans several token cells and the larger multiples would pass what a
-   * canvas can encode. Failures show in the panel's status line and are reported through notify.failure.
+   * canvas can encode. A capped size is no longer a whole multiple, so the pixels come out slightly uneven. Failures
+ * show in the panel's status line and are reported through notify.failure.
    * @param {string} scale                  DISK_SCALES key.
    * @returns {Promise<void>}
    */

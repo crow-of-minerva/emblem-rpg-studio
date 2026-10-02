@@ -24,7 +24,7 @@
   min-height: 0;
 }
 
-/* Item Art studio body: editor pane + optional Recolour side panel in a row. */
+/* Item Art studio body: editor pane and side panel in a row. One tray is always open. */
 .ete-body {
   flex: 1 1 auto;
   display: flex;
@@ -229,9 +229,7 @@
 
 .ete-canvas:active { cursor: var(--cursor-grab-down); }
 
-/* Layers strip has a FIXED height (no `auto`): extra layers scroll internally
- * instead of pushing the canvas-area up. This is what keeps the working canvas
- * area immune to layer-count changes. */
+/* Drag handle between the canvas area and the layers strip. */
 .ete-layers-splitter {
   flex: 0 0 7px;
   display: flex;
@@ -256,6 +254,9 @@
   width: 46px;
 }
 
+/* Layers strip has a FIXED height (no `auto`): extra layers scroll internally
+ * instead of pushing the canvas area up, so the working canvas never changes
+ * size with the layer count. */
 .ete-layers {
   flex: 0 0 195px;
   display: flex;
@@ -438,7 +439,7 @@
 .emblem-rpg-studio .ete-footer .ete-save { color: var(--sts-goldb); }
 .emblem-rpg-studio .ete-footer .ete-save:hover:not(:disabled) { color: var(--sts-goldb); }
 
-/* ---------- Overlays (grid + cutoff + projection) ----------
+/* ---------- Overlays (grid + cutoff + scale preview) ----------
  * Opt-in design aids toggled from the toolbar (cycleGrid / toggleBarCutoff /
  * togglePreview); visibility is driven by JS inline display. */
 

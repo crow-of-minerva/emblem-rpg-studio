@@ -37,7 +37,7 @@ const SHARED_FILE_LIMITS = Object.freeze({
   maxListed: 10000
 });
 
-/** The codes a publication settles with when the host wrote the file or listed the folder. */
+/** The result codes the host returns when it wrote the file or listed the folder. */
 const STUDIO_PUBLICATION_OUTCOMES = Object.freeze({
   PUBLISHED: 'studio.published',
   LISTED: 'studio.listed'
@@ -79,9 +79,8 @@ const PATH_SEGMENT = new RegExp(`^[A-Za-z0-9_-]{1,${PUBLICATION_SEGMENT_MAX}}$`)
 /* -------------------------------------------- */
 
 /**
- * Encode art bytes as base64 text for the socket, since text survives any transport socketlib might use and binary
- * data isn't guaranteed to. The bytes are converted in chunks, because spreading a whole image into one call would
- * pass the argument limit.
+ * Encode file bytes as base64 text for the socket message. The bytes are converted in chunks, because spreading a
+ * whole image into one call would pass the argument limit.
  * @param {Uint8Array} bytes        PNG contents.
  * @returns {string}
  */
@@ -308,7 +307,7 @@ function named(filename, pattern, kind) {
  * it: world Actors (their art, avatar and prototype Token), the Items on them, world Items, Item compendium index
  * entries, and what the host reports through `ports.otherFileReferences` (Scenes and their Tokens, Tiles and notes,
  * Journal images, Macros, Roll Tables, User avatars and other compendium entries). A compendium entry is never owned.
- * @param {object} ports            The host's ports. Every reference port is optional.
+ * @param {object} ports            The Foundry-side functions the host is given. The reference ones are optional.
  * @param {object|null} sender      The sending user.
  * @returns {Array<{path: string, owned: boolean, actor?: object, item?: object}>}
  */
@@ -390,7 +389,8 @@ function itemArtForeign(ports, sender, item, path) {
 
 /**
  * Whether a Trusted sender's shared PNG would overwrite a file a document they don't own uses, such as an export or
- * library part set as another unit's art. Staff senders and JSON files are never refused here.
+ * library part set as another unit's art. The Gamemaster and Assistant GMs are never refused here. Nor are JSON
+ * files (part sidecars, the palette sidecar, projects): no document points at one, so this check can't protect them.
  * @param {object} ports            See {@link createSharedFileHost}.
  * @param {string} senderId
  * @param {string} path             The destination.
@@ -431,12 +431,12 @@ function resolveWorldItem(ports, itemUuid) {
 /* -------------------------------------------- */
 
 /**
- * The host's side of art publication, built in foundry/publication-transport.mjs.
+ * The host's side of Actor art saves, built in foundry/publication-transport.mjs.
  *
- * It runs only on the eligible Gamemaster host and decides everything again from the socket's authenticated sender.
- * Role, allowlist and ownership are checked at the moment of writing. The file goes in the Actor's own unit folder,
- * never a folder the client names, and a Trusted Player can't overwrite a file that an Actor they don't own still
- * uses.
+ * Every client registers it, but it refuses unless this client is the command host. It checks the sender again from
+ * the user id Foundry's server attached to the message: role, allowlist and ownership, at the moment of writing.
+ * The file goes in the Actor's own unit folder, never a folder the client names, and a Trusted Player can't
+ * overwrite a file that an Actor they don't own still uses.
  * @param {object} ports
  * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the command host.
  * @param {() => boolean} ports.processing                             Whether system processing blocks publication.
@@ -466,7 +466,7 @@ export function createArtPublicationHost(ports) {
 /* -------------------------------------------- */
 
 /**
- * Admit, validate, confine and write one publication.
+ * Check the sender and the file, then save it into the Actor's own folder.
  * @param {object} ports            See {@link createArtPublicationHost}.
  * @param {*} request               The socket payload.
  * @param {*} senderId              The authenticated sender's user id.
@@ -564,7 +564,7 @@ export function createItemArtPublicationHost(ports) {
 /* -------------------------------------------- */
 
 /**
- * Admit, validate, confine and write one Item art publication.
+ * Check the sender, the Item and the file, then save it into the world's Item art folder.
  * @param {object} ports            See {@link createItemArtPublicationHost}.
  * @param {*} request               The socket payload.
  * @param {*} senderId              The authenticated sender's user id.
@@ -669,7 +669,7 @@ export function createSharedFileHost(ports) {
 /* -------------------------------------------- */
 
 /**
- * Admit, confine, validate and write one shared file.
+ * Check the sender, the folder, the file name and the bytes, then save one shared file.
  * @param {object} ports            See {@link createSharedFileHost}.
  * @param {*} request               The socket payload.
  * @param {string} senderId         The authenticated sender's user id.
@@ -749,8 +749,8 @@ async function listSharedFolderOnHost(ports, request, senderId) {
 /* -------------------------------------------- */
 
 /**
- * The refusal the host and the sender earn before anything else is read, or null: only the eligible host writes,
- * never while a system command resolves, and only for a sender Studio admits.
+ * Refuse at once unless this client is the command host, no system command is resolving, and the sender may use
+ * Studio. Returns the refusal, or null.
  * @param {object} ports
  * @param {*} senderId
  * @returns {Readonly<object>|null}
@@ -789,7 +789,7 @@ async function writeConfined(ports, folder, filename, bytes, kind, recheck) {
 }
 
 /* -------------------------------------------- */
-/*  Request Pacing                              */
+/*  One Request at a Time                       */
 /* -------------------------------------------- */
 
 /**
@@ -817,7 +817,7 @@ export function createSenderGate() {
 /* -------------------------------------------- */
 
 /**
- * A client's queue that sends its host requests one at a time, each starting only once the one before has settled,
+ * A client's queue that sends its host requests one at a time, each starting only once the one before has finished,
  * so the client never trips the host's busy gate by itself. A task that fails doesn't stop the ones behind it.
  * @returns {(task: () => Promise<*>) => Promise<*>}
  */
@@ -835,9 +835,9 @@ export function createRequestQueue() {
 /* -------------------------------------------- */
 
 /**
- * A Trusted client's side of art publication, built in foundry/publication-transport.mjs: validate, ask the host,
- * and settle within the deadline. A request the host hasn't answered in time settles as unknown and is never resent,
- * because the host may still be writing it. The person saving decides whether to save again.
+ * A client's side of Actor art saves, built in foundry/publication-transport.mjs: check the file, send it to the
+ * host, and wait up to the response deadline. No answer in time means "maybe saved", and the request is never
+ * resent, because the host may still be writing it. The person saving decides whether to save again.
  *
  * The host is read again in the same step that sends, since socketlib refuses to send to a user who has left, and
  * nothing sent means the art was not saved.
@@ -952,7 +952,7 @@ function hostRefusal(target) {
 
 /**
  * Send to the host the request was checked against, reading the host again in the same step. A host that has left
- * or changed settles as no host, and nothing is sent.
+ * or changed is refused as no host, and nothing is sent.
  * @param {() => {state?: string, hostUserId?: string}} host
  * @param {{hostUserId?: string}} target
  * @param {(hostUserId: string, request: object) => Promise<*>} send
@@ -1009,8 +1009,8 @@ async function settleWithin(request, responseMs, report, expect = 'path') {
 /* -------------------------------------------- */
 
 /**
- * A host answer in outcome shape, or null when it is not one. An accepted write carries its stored path, and an
- * accepted listing carries at most the listing cap of file names.
+ * A host answer in the expected `{ok, code, data}` shape, or null when it is not one. An accepted write carries its
+ * stored path, and an accepted listing carries at most the listing cap of file names.
  * @param {*} result
  * @param {'path'|'files'} [expect]
  * @returns {Readonly<{ok: boolean, code: string, data: object}>|null}

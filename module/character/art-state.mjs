@@ -99,8 +99,7 @@ function actorHolds(actor, changes) {
 
 /**
  * Give every conditional entry a unique ID. Missing and duplicate IDs get fresh ones, and existing unique IDs are
- * kept. writeTokenTabs runs every write through it, and Character Studio's _migrateConditionalCompositions uses it
- * to know each entry's ID before copying compositions to ID keys.
+ * kept. writeTokenTabs runs every write through it.
  */
 export function tokenTabsWithEntryIds(tabs) {
   return tabs.map(tab => {

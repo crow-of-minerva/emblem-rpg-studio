@@ -20,7 +20,7 @@ import { scopeStudioKeys } from '../editor/key-scope.mjs';
 const notify = createStudioNotifier(import.meta.url);
 
 /* -------------------------------------------- */
-/*  Admission                                   */
+/*  Access                                      */
 /* -------------------------------------------- */
 
 /**
@@ -69,7 +69,7 @@ function bustedArtPath(path) {
 /* -------------------------------------------- */
 
 /**
- * The item art editor: a single-layer pixel canvas with recolour and adjustment trays. The system's
+ * The item art editor: a single-layer pixel canvas with recolour and adjustment side panels ("trays"). The system's
  * `openStudioForItem` opens it through `api.openSpriteStudio` when an author right-clicks an item sheet's portrait.
  *
  * It uses the shared editor canvas (`CanvasView` in editor/canvas-view.mjs), the same one Character Studio uses, so
@@ -169,9 +169,9 @@ export class EmblemSpriteStudio extends EmblemApp {
   /**
    * Open the studio for an item, refusing an opening with nothing to edit.
    *
-   * Staff edit any Item's art. A listed Trusted Player edits art only for Items they own, and never for an Item in a
-   * compendium, whether stored there or embedded in a compendium Actor. Nobody, staff included, opens it on an Item
-   * carried by an unlinked token's Actor, whose art no save can reach.
+   * The Gamemaster and Assistant GMs edit any Item's art. A listed Trusted Player edits art only for Items they own,
+   * and never for an Item in a compendium, whether stored there or embedded in a compendium Actor. Nobody, GMs
+   * included, opens it on an Item carried by an unlinked token's Actor, whose art no save can reach.
    * @param {Item} item                             Item to edit.
    * @returns {EmblemSpriteStudio|null}
    */
@@ -216,21 +216,20 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Mount the canvas and wire everything, once.
+   * Mount the canvas and wire everything, on the first render only.
    *
-   * A mounted flag stops later renders from doing it again, because the canvas holds the art being edited and
-   * rebuilding it would discard the work.
+   * The canvas holds the art being edited, so `_mounted` stops later renders from building it again. A later render
+   * would still replace the part's HTML (HandlebarsApplicationMixin swaps the element) and drop the mounted canvas,
+   * which is then never remounted.
    *
-   * Selection changes go to both trays. The recolour panel needs to know which pixels to act on, and the adjustment
-   * tray has to discard a preview whose selection has moved.
+   * Selection changes go to both trays: the recolour panel acts on the selected pixels, and the adjustment tray drops
+   * a preview whose selection has moved.
    *
-   * Layer-state changes go to the recolour panel too, so the two trays don't undo each other's work. The panel maps
-   * tones from a snapshot of the layer and rewrites the whole layer from it, so without a refresh the next tone edit
-   * would wipe out an adjustment made since. `refreshFromLayer` rebuilds the snapshot from the adjusted pixels. The
-   * panel's own writes set a flag that makes the refresh do nothing, so a recolour doesn't rebuild its own baseline.
-   *
-   * The same callback enables or disables the adjustment tray, because whether there's anything to adjust depends on
-   * a layer that the art load supplies later, and on every import or clear after it.
+   * Pixel changes go to the recolour panel too. It maps tones from a copy of the layer and rewrites the whole layer
+   * from that copy, so without a refresh the next tone edit would wipe out an adjustment made since.
+   * `refreshFromLayer` rebuilds the copy; the panel's own writes skip the refresh. The same callback enables or
+   * disables the adjustment tray, since the layer to adjust arrives with the art load and changes on every import or
+   * clear.
    */
   _onRender(context, options) {
     super._onRender(context, options);
@@ -249,8 +248,8 @@ export class EmblemSpriteStudio extends EmblemApp {
       this._colourPanel?.onCanvasSelectionChanged(reason);
       this._onSelectionChangedForAdjust();
     };
-    // An adjustment, an undo or any other pixel write changes the pixels the Recolour tray's snapshot was taken
-    // from, and the panel rebuilds the snapshot where the two differ.
+    // An adjustment, an undo or any other pixel write changes the pixels the Recolour tray copied its tones from,
+    // and the panel rebuilds its copy where the two differ.
     this.view.onLayerStateChanged = (layer) => {
       if (this._colourPanel?._layer === layer) this._colourPanel.refreshFromLayer();
       // An edit or undo keeps an open preview as its own step and ends the session, so the sliders return to
@@ -436,9 +435,9 @@ export class EmblemSpriteStudio extends EmblemApp {
   /**
    * Save into the world and point the item at it.
    *
-   * The file is named after the item, settled against what the item art folder already holds.
-   * `publishItemArtFile` writes it: staff who can upload write directly, and a Trusted Player's file goes through
-   * the Gamemaster's browser, which checks the Item again.
+   * The file is named after the item, chosen against what the item art folder already holds.
+   * `publishItemArtFile` writes it: a GM or Assistant GM who can upload writes directly, and anyone else's file goes
+   * through the Gamemaster's browser, which checks the Item again.
    * @returns {Promise<void>}
    */
   async _saveArt() {
@@ -536,8 +535,8 @@ export class EmblemSpriteStudio extends EmblemApp {
   /**
    * Preview the adjustment live as a slider moves.
    *
-   * The first movement begins a session, which captures the baseline pixels. Every later preview re-applies from
-   * that baseline instead of stacking, so a slider can be dragged back and forth without degrading the image. The
+   * The first movement begins a session, which records the starting pixels. Every later preview re-applies from
+   * those pixels instead of stacking, so a slider can be dragged back and forth without degrading the image. The
    * session covers the selected pixels, or the whole image when nothing is selected, so an adjustment never needs a
    * selection first.
    */
@@ -550,7 +549,7 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Return one slider to neutral and re-preview from the baseline with the rest.
+   * Return one slider to neutral and re-preview from the starting pixels with the rest.
    * @param {string} key            Which slider.
    */
   _resetOneAdjust(key) {

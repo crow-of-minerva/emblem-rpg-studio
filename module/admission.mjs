@@ -19,7 +19,8 @@ const USER_ROLES = Object.freeze({ NONE: 0, PLAYER: 1, TRUSTED: 2, ASSISTANT: 3,
  * What a user may do in Emblem RPG Studio, meaning Character Studio and Sprite Studio. Staff, meaning the Gamemaster
  * and Assistant GMs, use every tool and edit any Actor's or Item's art. A Trusted Player the Gamemaster has listed
  * uses the same tools, edits art only for Actors and Items they own, and saves every file through the Gamemaster's
- * browser. Scene Crop and the allowlist stay with staff. Everyone else is refused.
+ * browser. Scene Crop is for the Gamemaster and Assistant GMs, and only the Gamemaster may change the allowlist.
+ * Everyone else is refused.
  */
 export const STUDIO_ACCESS = Object.freeze({
   STAFF: 'staff',
@@ -37,7 +38,7 @@ export const DRAFT_STORAGE = Object.freeze({
 /*  Refusals                                    */
 /* -------------------------------------------- */
 
-/** Every reason Studio refuses an opening, a tool or a publication. */
+/** Every reason Studio refuses to open, to use a tool or to save a file. */
 export const STUDIO_REFUSALS = Object.freeze({
   ROLE_DENIED: 'studio.role-denied',
   NOT_ALLOWLISTED: 'studio.not-allowlisted',
@@ -135,7 +136,7 @@ export class StudioRefusal extends Error {
 }
 
 /* -------------------------------------------- */
-/*  Admission                                   */
+/*  Access Rules                                */
 /* -------------------------------------------- */
 
 /** Foundry document ids: sixteen letters and digits. */
@@ -157,7 +158,7 @@ export function normalizeAllowlist(value) {
 
 /**
  * What one user may do in Studio. Only the role and the allowlist decide. Actor ownership, Foundry's upload
- * permission and the Trusted role on its own never admit anyone. foundry/access.mjs reads the live user and
+ * permission and the Trusted role on its own never let anyone in. foundry/access.mjs reads the live user and
  * allowlist and asks this.
  * @param {{id?: string, role?: number}|null} user    The user, as Foundry reports them.
  * @param {*} [allowlist]                              The stored allowlist.
@@ -264,7 +265,7 @@ export function allowlistFromSelection(users, selectedIds) {
 /* -------------------------------------------- */
 
 /**
- * One frozen admission verdict.
+ * A frozen access result.
  * @param {string} access
  * @param {string} code
  * @param {string} userId

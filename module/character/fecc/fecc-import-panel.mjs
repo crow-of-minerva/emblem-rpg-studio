@@ -35,13 +35,13 @@ function caseFoldedLookup(lowerNames) {
 
 /**
  * The Import tray of Character Studio's side rail (built by EmblemCharacterStudio._ensureFeccPanel). Its buttons open
- * the Sprite Importer dialog (showManualClassifyDialog in fecc-import-manual.mjs) empty, or seeded from the selected
+ * the Sprite Importer dialog (showManualClassifyDialog in fecc-import-manual.mjs) empty, or filled from the selected
  * layer, this tab's canvas, every open tab's canvas, or a spritesheet's sprites. The panel then names, encodes, saves
  * and places whatever the dialog returns.
  *
- * Seeded results carry a placement, so each lands back on the tab it came from, above the original, with its pixels
- * where the source drew them. The dialog's Import to New Spritesheet button drops the placements and packs the whole
- * batch into one palette-linked layer on a new sheet tab.
+ * Results taken from a tab carry a placement, so each lands back on the tab it came from, above the original, with
+ * its pixels where the source drew them. The dialog's Import to New Spritesheet button drops the placements and packs
+ * the whole batch into one layer, with one palette, on a new sheet tab.
  *
  * The dialog's Save to library switch decides whether an asset is saved at all. A saved asset's tray comes from its
  * name (fecc-asset-routing.mjs).
@@ -52,7 +52,7 @@ export class FeccImportPanel extends Panel {
    * @param {string} opts.side              'avatar' or 'token'.
    * @param {object} opts.view              The canvas view imports land on by default.
    * @param {HTMLElement} opts.root         Panel root.
-   * @param {object} opts.editor            The tab's import facade from EmblemCharacterStudio._tabImportEditorShim:
+   * @param {object} opts.editor            The tab's import helpers from EmblemCharacterStudio._tabImportEditorShim:
    *   palettes, default names, every tab's view and the spritesheet builder.
    */
   constructor({ side, view, root, editor }) {
@@ -155,10 +155,10 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * The part type the importer expects its seeds to become, which decides its palette boxes. A token import is always
-   * a token layer. An avatar seed's type comes from its suggested name, the same routing that files the result, and
-   * a batch whose seeds disagree, or an empty importer, is treated as a body.
-   * @param {object[]} seeds                Seeds for the dialog.
+   * The part type the importer expects its starting images to become, which decides its palette boxes. A token
+   * import is always a token layer. An avatar image's type comes from its suggested name, the same routing that files
+   * the result, and a batch whose images disagree, or an empty importer, is treated as a body.
+   * @param {object[]} seeds                Starting images for the dialog.
    * @returns {string}
    */
   _expectedType(seeds) {
@@ -168,12 +168,12 @@ export class FeccImportPanel extends Panel {
   }
 
   /* -------------------------------------------- */
-  /*  Seeding                                     */
+  /*  Starting Images                             */
   /* -------------------------------------------- */
 
   /**
-   * Run an image through decodeForToken and prepareForImport into a seed for the dialog. Throws a TokenImportError
-   * when the image can't be imported.
+   * Run an image through decodeForToken and prepareForImport into a starting image for the dialog. Throws a
+   * TokenImportError when the image can't be imported.
    * @param {HTMLImageElement|HTMLCanvasElement} src            Source pixels.
    * @param {string|null} [name]                                Suggested name.
    * @param {object|null} [placement]                           Where the result should land.
@@ -194,9 +194,9 @@ export class FeccImportPanel extends Panel {
   /* -------------------------------------------- */
 
   /**
-   * The placement for a whole-canvas capture. The composite is the view's own coordinate space, so the source maps
-   * one to one, unrotated and unflipped.
-   * @param {object} view           The view captured.
+   * The placement for an image of the whole canvas. The composite is the view's own coordinate space, so the source
+   * maps one to one, unrotated and unflipped.
+   * @param {object} view           The view the image was taken from.
    * @returns {object}
    */
   _placementForView(view) {
@@ -209,10 +209,10 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * The placement for a single-layer capture. The source is the layer's own image, not the composite, so it maps
+   * The placement for an image of a single layer. The source is the layer's own image, not the composite, so it maps
    * back through the layer's transform.
    * @param {object} view           The view.
-   * @param {object} layer          The layer captured.
+   * @param {object} layer          The layer the image was taken from.
    * @returns {object}
    */
   _placementForLayer(view, layer) {
@@ -285,7 +285,7 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Open the importer seeded with the selected layer.
+   * Open the importer with the selected layer.
    * @returns {Promise<void>}
    */
   async _openFromLayer() {
@@ -316,7 +316,7 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Open the importer seeded with this tab's flattened canvas.
+   * Open the importer with this tab's flattened canvas.
    * @returns {Promise<void>}
    */
   async _openFromTab() {
@@ -347,7 +347,7 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Split this spritesheet tab into sprites (segmentSpriteSheet) and seed the importer with each, placed where it
+   * Split this spritesheet tab into sprites (segmentSpriteSheet) and open the importer with each, placed where it
    * sits on the sheet.
    * @returns {Promise<void>}
    */
@@ -400,7 +400,7 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Whether a captured composite has exactly the same pixels as one already collected. Several tabs often hold the
+   * Whether a tab's composite has exactly the same pixels as one already collected. Several tabs often hold the
    * same art, and importing it once per tab would make a batch of identical assets.
    * @param {object[]} seen                 Composites already collected, as `{ w, h, bytes }`.
    * @returns {boolean}
@@ -418,9 +418,9 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Capture every open tab on this side and seed the importer with all of them.
+   * Copy every open tab's canvas on this side and open the importer with all of them.
    *
-   * Tabs not opened yet have no canvas, so they are all created first (ensureAllTabs), or the capture would skip
+   * Tabs not opened yet have no canvas, so they are all created first (ensureAllTabs), or the copy would skip
    * them. A composite whose pixels can't be read can't be checked for duplicates, but it is still imported. When
    * nothing is left, the status line counts the duplicate, empty and unreadable tabs, so the user can see why.
    * @returns {Promise<void>}
@@ -480,13 +480,13 @@ export class FeccImportPanel extends Panel {
    * Everything after the dialog closes: name, route, encode, save and place each result, then report in the status
    * line. Every button that opens the dialog ends here.
    *
-   * A result with a placement lands on the view it was captured from, at the source's transform. The rest land on
+   * A result with a placement lands on the view it was taken from, at the source's transform. The rest land on
    * this panel's view at the default fit.
    *
-   * The spritesheet destination is checked before any naming or file write, so a refused import leaves nothing
-   * half-done. Only imports saved to the library are named, with the full name-collision prompts, because the name
-   * decides the tray and sub-tab. Session-only imports write no files, so they aren't named and their layers keep
-   * the source's name.
+   * The spritesheet builder is checked before any naming or file write. The library files are still written before
+   * the sheet is built, so a sheet that can't be built leaves the saved assets behind. Only imports saved to the
+   * library are named, with the full name-collision prompts, because the name decides the tray and sub-tab.
+   * Session-only imports write no files, so they aren't named and their layers keep the source's name.
    * @param {object|null} outcome                   What showManualClassifyDialog resolved to.
    * @param {object} [options]
    * @param {object|null} [options.captureNote]     Duplicate, empty and unreadable counts to add to the report.
@@ -777,8 +777,8 @@ export class FeccImportPanel extends Panel {
    * Turn one result into a layer, saving it to the library first when the import is permanent.
    *
    * The crop geometry is measured after encoding, because removed colours can shrink the opaque area and an earlier
-   * reading would place the layer wrongly. The new layer is marked edited, so the Parts Library's pristine check
-   * (_isLayerPristine) never replaces it: an import is the user's own work, not a part picked off a tray.
+   * reading would place the layer wrongly. The new layer is marked edited, so the Parts Library's untouched-layer
+   * check (_isLayerPristine) never replaces it: an import is the user's own work, not a part picked off a tray.
    * @param {object} params                         The result and its destination.
    * @returns {Promise<object>}                     The view it landed on.
    */
@@ -878,7 +878,7 @@ export class FeccImportPanel extends Panel {
   }
 
   /**
-   * Pack a whole batch into one palette-linked layer on a new sheet tab (createSheetFromCanvases). Placements are
+   * Pack a whole batch into one layer, with one palette, on a new sheet tab (createSheetFromCanvases). Placements are
    * ignored, because this destination gathers the sprites into a new composition instead of returning them to where
    * they came from.
    * @param {object[]} results                      The dialog's results.

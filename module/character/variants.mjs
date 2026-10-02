@@ -1,10 +1,11 @@
 /** @layer character-studio */
 /*
- * How Character Studio addresses an actor's token art. A destination is a tuple of class, conditional entry and
- * variant type. This file resolves a tuple to the path, portrait, offset and scale stored on an actor, compares and
- * labels tuples, and lists the class and entry options. It also keeps the layer compositions in the actor's
- * `tokenComp` flag in step with class renames (syncTokenTabRenames runs on preUpdateActor), merges a project's class
- * tabs into an actor's, and names the files a save writes. No DOM access.
+ * How Character Studio addresses an actor's token art. A destination is one combination of class, conditional entry
+ * and variant type, passed around as a `tuple` object. This file resolves a destination to the path, portrait, offset
+ * and scale stored on an actor, compares and labels destinations, and lists the class and entry options. It also
+ * keeps the layer compositions in the actor's `tokenComp` flag in step with class renames (syncTokenTabRenames runs
+ * on preUpdateActor), merges a project's class tabs into an actor's, and names the files a save writes. No DOM
+ * access.
  */
 
 import { slugifyHyphen } from '../utils/string.mjs';
@@ -24,7 +25,7 @@ const SLOT_FILE_WORDS = Object.freeze({
 });
 
 /**
- * The five variant types: the token-art slots `game.emblemRpg.api.character.art.slots` publishes, in its order and
+ * The variant types: the token-art slots `game.emblemRpg.api.character.art.slots` publishes, in its order and
  * with its labels, each with the word it adds to a file name.
  * @returns {Array<{value: string, label: string, fileWord: string}>}
  */
@@ -48,7 +49,10 @@ export function typeOptionsFor(classKey) {
 
 /* -------------------------------------------- */
 
-/** Whether a token is the absolute default. */
+/**
+ * Whether a destination asks for a variant type on the Default class. The Default class has only its default
+ * token, so callers refuse a destination for which this is true.
+ */
 export function isDefaultVariant(tuple) {
   return (tuple?.classKey || 'Default') === 'Default' && (tuple?.type || 'default') !== 'default';
 }
@@ -62,7 +66,10 @@ export function isTokenSlot(type) {
 
 /* -------------------------------------------- */
 
-/** Slugify a class or entry name for use in a composition key. */
+/**
+ * Reduce a name to ASCII letters, digits, `_` and `-`, for composition keys and file names. A name in a non-Latin
+ * script comes out empty.
+ */
 export const slugifyName = slugifyHyphen;
 
 /* -------------------------------------------- */
@@ -185,7 +192,7 @@ export function resolveAvatarPath(actor) {
  *
  * A class tab's value overrides the top-level one even when it's zero, so the check is for a number, not a truthy
  * value. The clamp copies `activeTokenOffsetY` in `emblem-rpg/module/game/character/token-art.mjs`, which sets the
- * offset on the board, so the studio previews the offset the token will be drawn at.
+ * offset on the map, so the studio previews the offset the token will be drawn at.
  * @param {Actor} actor
  * @param {object} tuple          Destination tuple.
  * @returns {number}
@@ -209,9 +216,9 @@ export function resolveOffsetY(actor, tuple) {
  * The token scale for this tuple's slot, class tab first, then top level.
  *
  * Any positive number is taken as stored, like `selectBaselineTokenArt` in
- * `emblem-rpg/module/game/character/token-art.mjs`, which sizes the token on the board. The system's Actor Control
+ * `emblem-rpg/module/game/character/token-art.mjs`, which sizes the token on the map. The system's Actor Control
  * Panel also clamps what an author may type, but that clamp isn't applied here, because the studio would then
- * preview a size the board doesn't draw.
+ * preview a size the map doesn't draw.
  * @param {Actor} actor
  * @param {object} tuple          Destination tuple.
  * @returns {number}
@@ -250,8 +257,7 @@ export function avatarEditableFor(tuple) {
 /**
  * The key a tuple's layer composition is stored under in the actor's `tokenComp` flag. It's slugged so it's safe as
  * a flag key, with no dots or slashes for Foundry's flatten to expand into a nested path. An entry's ID keeps the
- * key stable through duplicate names, renames and reordering. Keys built from an entry's name or index are still
- * read, so migrateCompositionKeys can copy them to the ID key.
+ * key stable through duplicate names, renames and reordering.
  * @param {object} tuple          Destination tuple.
  * @returns {string}
  */
@@ -332,11 +338,11 @@ function tokenTabRenames(oldTabs, newTabs) {
 /**
  * Re-key a composition store across a set of class renames.
  *
- * Composition keys start with the class name's slug, so renaming a class tab would strand every composition saved
+ * Composition keys start with the class name's slug, so renaming a class tab would orphan every composition saved
  * under it. The studio would then find no layer stack for the variant and load the flat image as one rasterised
  * layer with no palette link. Moving the keys with the rename keeps the layers.
  *
- * Deletions are staged after the writes, and a key another rename has just written to is never deleted, because a
+ * Deletions are added after the writes, and a key another rename has just written to is never deleted, because a
  * name swap between two tabs moves both ways at once and would otherwise delete half of its own result.
  *
  * A destination key that already exists is overwritten: the renamed tab is the live variant, and anything already
@@ -377,7 +383,7 @@ function compRenameUpdate(comp, renames, flagNamespace) {
  * Registered on `preUpdateActor` in foundry/hooks.mjs.
  *
  * Composition keys start with the class name's slug, while the tab's token paths are found by tab ID. Without this,
- * a rename would keep the flat image but strand its layer stack. The new keys go into the same update, so the store
+ * a rename would keep the flat image but lose its layer stack. The new keys go into the same update, so the store
  * is never seen half-moved. Running on the hook instead of in the studio means a rename from a macro, a sheet or
  * the API moves the keys too.
  * @param {Actor} actor     The actor being updated.
@@ -416,7 +422,7 @@ export function seedCompositionsFromDefault(comp, className, flagNamespace) {
 }
 
 /* -------------------------------------------- */
-/*  Tab Reconciliation                          */
+/*  Merging Project Tabs                        */
 /* -------------------------------------------- */
 
 /**
@@ -487,11 +493,11 @@ function cleanTab(tab) {
  * project loads and reports the created and refused names.
  *
  * A tab or condition the actor already has is left as it is, scale, offset, triggers and art paths included. The
- * actor is the live document and a project is a snapshot of how it once looked, so loading one mustn't undo tuning
+ * actor is the live document and a project records how it once looked, so loading one mustn't undo tuning
  * done since.
  *
  * Tabs and conditions are matched by name, not id, because ids are per actor and a project is often loaded onto a
- * different actor than the one it was saved from. Unnamed conditions are skipped, since a tuple can never name
+ * different actor than the one it was saved from. Unnamed conditions are skipped, since no destination can name
  * them.
  *
  * Creation stops at {@link maxClassTabs}, counted the way the system's own panel counts, and the tabs left out are
@@ -545,7 +551,7 @@ export function reconcileTokenTabs(existing, wanted) {
 /* -------------------------------------------- */
 
 /**
- * Whether two tuples address the same destination. Callers use it to find the studio tab already bound to a
+ * Whether two tuples address the same destination. Callers use it to find the studio tab already open on a
  * destination. Entry IDs decide when both tuples have one. Otherwise the index is compared only when both carry
  * one, because a tuple routed from the system's Actor Control Panel has the index while one built from a class
  * strip doesn't, and both must find the same tab.
@@ -618,8 +624,8 @@ function importConditionToken(entry) {
 
 /**
  * The default import name for a tuple's art. The segments are words the asset router files by, so a generated
- * name lands in the right tray and sub-tab without anyone choosing one. The weapon and condition segments are left
- * out when the entry has neither.
+ * name lands in the right Parts Library section and sub-tab without anyone choosing one. The weapon and condition
+ * segments are left out when the entry has neither.
  * @param {string} actorName      The actor's name.
  * @param {object} tuple          Destination tuple.
  * @returns {string}
@@ -639,8 +645,8 @@ export function tupleImportName(actorName, tuple) {
 /**
  * The default import name for an avatar part: the actor, then the slot the part fills.
  *
- * The slot word is one the avatar router recognises, so a generated name files itself into the right tray. A part
- * with no known slot is named as a body, which is where the router files an unmarked name anyway.
+ * The slot word is one the avatar router recognises, so a generated name files itself into the right Parts Library
+ * section. A part with no known slot is named as a body, which is where the router files an unmarked name anyway.
  * @param {string} actorName      The actor's name.
  * @param {string|null} [slot]    The part type, as a layer's feccType.
  * @returns {string}
@@ -689,7 +695,11 @@ export function unitFileStem(actorName, customPrefix = '') {
   return stem.slice(0, UNIT_STEM_MAX).replace(/-+$/, '') || 'actor';
 }
 
-/** The unit's art folder name, widened to the whole id when another unit would share it. */
+/**
+ * The unit's art folder name, widened to the whole id when another unit would share it. The widening depends on the
+ * other actors, so a unit's folder can change name later (when another actor's folder name starts to collide with
+ * it), and later saves then go to a different folder from earlier ones.
+ */
 function unitFolderName(stem, actorId, others = []) {
   const id = String(actorId ?? '');
   const short = `${stem}-${id.slice(-UNIT_ID_CHARS)}`;
@@ -707,8 +717,8 @@ export function actorFilePrefix(actor) {
 
 /**
  * The unit folder an Actor's art saves into, among every Actor Character Studio edits. The studio uses it to name
- * the folder it saves into, and the publication host (publication.mjs) to keep a Trusted Player's file in that same
- * folder. Both read the same world, so both reach the same name.
+ * the folder it saves into. When a Trusted Player saves, the GM's client (publication.mjs) works the folder out
+ * again from its own list of actors, and that is the folder it writes to.
  * @param {Actor} actor                   The Actor.
  * @param {Iterable<Actor>} actors        Every world Actor.
  * @param {string} [stem]                 The prefix to name the folder from, when previewing an unsaved one.
@@ -775,7 +785,7 @@ function artDestinationKey(actor, tuple) {
 
 /**
  * Every art path the actor points at, each with the destination holding it. savedArtFilename uses it to avoid
- * another destination's file, and the publication host to find art a Trusted Player may not overwrite.
+ * another destination's file, and the GM's client to find art a Trusted Player may not overwrite.
  */
 export function actorArtReferences(actor) {
   const refs = [];
@@ -813,8 +823,7 @@ function claimArtFilename(folder, base, ownKey, references) {
 }
 
 /**
- * The file a save writes into the unit folder: a token destination, the avatar, or a spritesheet. Called by
- * Character Studio's _artDestination.
+ * The file a save writes into the unit folder: a token destination, the avatar, or a spritesheet.
  */
 export function savedArtFilename(actor, { folder, stem, side = 'token', tuple = null, sheetId = null }) {
   const refs = actorArtReferences(actor);

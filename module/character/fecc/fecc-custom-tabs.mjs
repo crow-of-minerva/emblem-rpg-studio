@@ -4,8 +4,8 @@
  * Library (fecc-parts-library.mjs) and the import panel (fecc-import-panel.mjs) read and change it through this file.
  *   - `tabs` lists the sub-tabs a user made for that category's tray. The idle, dodge and attack trays show them after
  *     Default and the built-in weapon tabs, and the other trays after Default and Custom.
- *   - `entries` holds per-file overrides: a display `name`, the `tab` the file is filed under (null for the unfiled
- *     pane, labelled Default in the idle, dodge and attack trays and Custom elsewhere), and a `deleted` flag.
+ *   - `entries` holds per-file overrides: a display `name`, the `tab` the file is filed under (null for no sub-tab,
+ *     shown under Default in the idle, dodge and attack trays and Custom elsewhere), and a `deleted` flag.
  * Foundry's file API can't rename or delete a file, so a PNG stays on disk under its first name and the sidecar says
  * what to call it, where to file it and whether to hide it.
  *
@@ -104,7 +104,7 @@ export function getCachedSidecar(category) {
  * their sub-tabs, filings, names and hidden parts. The cache takes the saved copy once the write lands, so a
  * failed write shows no change.
  *
- * Only staff and listed Trusted Players write the library, so anyone else is refused before anything changes. A
+ * Only the GM, assistant GMs and listed Trusted Players write the library, so anyone else is refused first. A
  * Trusted Player's write goes through the Gamemaster's browser (io.mjs routes it). The callers run from click
  * handlers that don't wait on the result, so a failed write is reported here instead of rejecting.
  * @param {string|null} category          Category.
@@ -164,7 +164,7 @@ export async function addCustomTab(category, name) {
 }
 
 /**
- * Remove a sub-tab. Its files move to the unfiled pane (tab null) instead of being hidden, so no part is lost.
+ * Remove a sub-tab. Its files move out of any sub-tab (tab null) instead of being hidden, so no part is lost.
  * @returns {Promise<boolean>}            False when there is no such tab.
  */
 export async function removeCustomTab(category, name) {
@@ -216,7 +216,7 @@ export async function softDeleteEntry(category, filename) {
   await setEntry(category, filename, { deleted: true });
 }
 
-/** File a part under a sub-tab, or under the unfiled pane when `tab` is null. */
+/** File a part under a sub-tab, or under no sub-tab (Default or Custom) when `tab` is null. */
 export async function setEntryTab(category, filename, tab) {
   await setEntry(category, filename, { tab });
 }

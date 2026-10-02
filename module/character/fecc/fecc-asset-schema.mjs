@@ -4,9 +4,9 @@
  *   - schemas.json holds each imported asset's default palette. The import panel writes an entry for every asset it
  *     saves to the library, and the colour panel's Asset Default button reads it back. The Studio module's own
  *     assets/fecc/meta/schemas.json holds the shipped defaults under it.
- *   - workspace-<userId>.json holds a staff user's open actors and tabs, canvas modes, pane visibility and unsaved
- *     panes, so the studio reopens where it was left. Everyone else keeps the workspace in this browser's drafts
- *     instead, and it stays there if their Studio access is revoked.
+ *   - workspace-<userId>.json holds the open actors and tabs, canvas modes, pane visibility and unsaved panes of the
+ *     GM or an assistant GM, so the studio reopens where it was left. Everyone else keeps the workspace in this
+ *     browser's drafts instead, and it stays there if their Studio access is revoked.
  *
  * schemas.json shape:
  * {
@@ -46,9 +46,8 @@ function workspaceFilename() {
 }
 
 /**
- * Whether this user's workspace, with the unsaved drafts inside it, stays in this browser. True for everyone but
- * staff (draftStorageFor in admission.mjs), including a Trusted Player whose access was just revoked, so losing
- * access never discards drafts and nobody writes drafts to a host folder they may not write to.
+ * Whether this user's workspace, with the unsaved drafts inside it, stays in this browser. True for everyone except
+ * the GM and assistant GMs, including a Trusted Player whose access was just revoked.
  * @returns {boolean}
  */
 function draftsStayLocal() {
@@ -75,8 +74,8 @@ let schemasCache  = null;
 
 /**
  * The world's own entries, kept apart from the merged view. Saving the merged view would copy every shipped default
- * into the world file, and a later change to a shipped default would never reach that world. Only this layer and
- * the Studio layer are written back.
+ * into the world file, and a later change to a shipped default would never reach that world. Only this layer is
+ * saved back to the world.
  * @type {object|null}
  */
 let worldSchemas  = null;
@@ -106,7 +105,6 @@ function _assetsOf(parsed) {
  * Load and cache the per-asset default palettes. The Studio module's shipped defaults are read first and the world's
  * own entries laid over them, so a shipped part comes with its authored palette while anything re-saved in this
  * world still wins. A missing file at either place counts as empty, since a world with no saved palettes is normal.
- * Character Studio (_readWorkspace) and the colour panel load it.
  * @returns {Promise<object>}
  */
 export async function loadSchema() {
@@ -214,7 +212,7 @@ async function _readLocalWorkspace() {
   }
 }
 
-/** Write the workspace: beside the world for staff, into this browser's drafts for everyone else. */
+/** Write the workspace: beside the world for the GM and assistant GMs, in this browser's drafts for anyone else. */
 async function _persistWorkspace(payload) {
   if (draftsStayLocal()) {
     await browserDraftStore().write(localWorkspaceKey(), payload ?? {});

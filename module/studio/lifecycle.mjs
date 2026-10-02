@@ -14,8 +14,7 @@
  * Hold one window's subscriptions until it closes.
  *
  * Teardown runs in reverse order of registration and doesn't stop at a failure, so a listener whose target is
- * already gone can't leave the next hook subscribed. A released lifecycle can be used again, so the singleton
- * window can reopen after a close.
+ * already gone can't leave the next hook subscribed.
  * @param {object} [params]
  * @param {Function} [params.report]      Reports a teardown that threw, as `notify.failure` does.
  * @returns {Readonly<object>}

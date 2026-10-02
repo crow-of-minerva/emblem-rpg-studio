@@ -90,7 +90,7 @@ const PIXELART_BLOCK_SLACK   = 0.5;
 
 /**
  * Scan lines sampled per residual pass. Block structure is a whole-image property, so a couple of hundred lines
- * settle it as well as thousands do.
+ * measure it as well as thousands do.
  */
 const PIXELART_BLOCK_LINES   = 192;
 /* -------------------------------------------- */
@@ -371,7 +371,7 @@ function pixelArtAxisModel(data, w, h, sig, len, axis) {
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.
- * @returns {object}                      Cell counts, phases, and the block residual settled for.
+ * @returns {object}                      Cell counts, phases, and the block residual of the chosen grid.
  */
 export function pixelArtDetectNativeAxes(data, w, h) {
   const { col, row } = pixelArtGradients(data, w, h);

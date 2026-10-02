@@ -15,7 +15,8 @@ const DRAFT_STORE = 'drafts';
  *
  * Not local storage, because a workspace carries every unsaved pane as encoded pixels and would soon crowd out the
  * few megabytes local storage shares with Foundry's own client settings. A failure rejects, so no caller reports a
- * draft as kept when it wasn't.
+ * draft as kept when it wasn't. Records are never deleted and have no size limit; each save replaces the record
+ * under its key.
  * @returns {Readonly<{read: (key: string) => Promise<*>, write: (key: string, value: *) => Promise<void>}>}
  */
 function createLocalDraftStore() {
@@ -59,8 +60,8 @@ function createLocalDraftStore() {
 /* -------------------------------------------- */
 
 /**
- * The key one user's draft is kept under in one world. fecc-asset-schema.mjs keys the Trusted Player's workspace
- * with it.
+ * The key one user's draft is kept under in one world. fecc-asset-schema.mjs keys the workspace of every user below
+ * Assistant GM with it.
  * @param {{worldId: *, userId: *, name: *}} parts
  * @returns {string}
  */

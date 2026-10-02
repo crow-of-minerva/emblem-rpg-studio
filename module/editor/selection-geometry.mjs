@@ -21,14 +21,14 @@ export const SELECTION_STROKE_PX = 0.5;
 export const NO_OFFSET = Object.freeze({ x: 0, y: 0 });
 
 /* -------------------------------------------- */
-/*  Floating Offset                             */
+/*  Move Offset                                 */
 /* -------------------------------------------- */
 
 /**
- * How far a selection has been carried from the pixels it was lifted from, in layer-source pixels, read from its
- * `ox` and `oy`. While a move floats, the lifted pixels (`CanvasView#_floating`) and the mask both sit at this
- * offset, kept together by `moveFloatingTo`. `CanvasView#_commitMove` and `_cancelMove` reset it to zero, so outside
- * a float the offset is always the origin.
+ * How far a selection has been carried from the pixels it was lifted from, in the layer image's own pixels, read
+ * from its `ox` and `oy`. While a move floats, the lifted pixels (`CanvasView#_floating`) and the mask both sit at
+ * this offset, kept together by `moveFloatingTo`. `CanvasView#_commitMove` and `_cancelMove` reset it to zero, so
+ * outside a move the offset is always the origin.
  * @param {object|null} selection         The live selection.
  * @returns {{x: number, y: number}}
  */
@@ -44,7 +44,7 @@ export function selectionOffset(selection) {
  * reads the selection's, so writing only one leaves the outline behind the pixels.
  * @param {object|null} selection         The live selection.
  * @param {object|null} floating          The lifted pixels, if a move is in progress.
- * @param {{x: number, y: number}} offset The new offset, in layer-source pixels.
+ * @param {{x: number, y: number}} offset The new offset, in the layer image's own pixels.
  */
 export function moveFloatingTo(selection, floating, offset) {
   if (floating) {
@@ -60,12 +60,12 @@ export function moveFloatingTo(selection, floating, offset) {
 /* -------------------------------------------- */
 
 /**
- * Where a move drag has carried the lifted pixels, in layer-source pixels. The drag is measured in canvas cells but
- * applied in layer-source pixels, so both ends go through the layer's inverse transform, which keeps a move correct
- * on a scaled, rotated or flipped layer. Layers usually sit one to one on the grid, where this changes nothing.
+ * Where a move drag has carried the lifted pixels, in the layer image's own pixels. The drag is measured in canvas
+ * cells but applied in layer pixels, so both ends go through the layer's inverse transform, which keeps a move
+ * correct on a scaled, rotated or flipped layer. Layers usually sit one to one on the grid, where this changes nothing.
  * @param {object} layer                  The layer the selection belongs to.
  * @param {number} size                   The canvas grid's side length.
- * @param {object} drag                   The tool drag's payload: startCanvas, startOffsetX, startOffsetY.
+ * @param {object} drag                   The tool drag's data: startCanvas, startOffsetX, startOffsetY.
  * @param {number} canvasX                The pointer's canvas x.
  * @param {number} canvasY                The pointer's canvas y.
  * @returns {{x: number, y: number}}
@@ -84,12 +84,12 @@ export function dragOffset(layer, size, drag, canvasX, canvasY) {
 /* -------------------------------------------- */
 
 /**
- * Whether a layer-source pixel is inside a mask, bounds included.
+ * Whether a pixel of the layer image is inside a mask, bounds included.
  * @param {Uint8Array} mask       The mask.
  * @param {number} w              Its width.
  * @param {number} h              Its height.
- * @param {number} lx             Layer-source x.
- * @param {number} ly             Layer-source y.
+ * @param {number} lx             Layer image x.
+ * @param {number} ly             Layer image y.
  * @returns {boolean}
  */
 export function maskContains(mask, w, h, lx, ly) {
@@ -164,7 +164,7 @@ function emptySelection(layer) {
     w: layer.width,
     h: layer.height,
     mask: new Uint8Array(layer.width * layer.height),
-    ox: 0, oy: 0 // floating-move offset in layer-source pixels (see selectionOffset)
+    ox: 0, oy: 0 // floating-move offset in layer image pixels (see selectionOffset)
   };
 }
 
@@ -192,14 +192,14 @@ export function seedSelection(layer, mode, current) {
 }
 
 /* -------------------------------------------- */
-/*  Marquee Projection                          */
+/*  Marquee Placement                           */
 /* -------------------------------------------- */
 
 /**
  * The SVG transform that matches how a layer is drawn, so the marquee lands on the pixels it outlines. It is the
  * same transform `ImageLayer#draw` and `CanvasView#_drawFloatingTo` apply, flip included, so a selection on a
- * flipped layer wraps the mirrored pixels the user sees. The floating offset is in layer-source pixels, so it goes
- * inside the transform, next to the shift to the source's origin.
+ * flipped layer wraps the mirrored pixels the user sees. The floating offset is in the layer image's own pixels, so
+ * it goes inside the transform, next to the shift to the image's origin.
  * @param {object} layer                          The layer.
  * @param {number} size                           The canvas grid's side length.
  * @param {{x: number, y: number}} offset         The selection's floating offset.

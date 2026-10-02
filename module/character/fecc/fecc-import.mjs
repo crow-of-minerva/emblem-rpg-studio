@@ -159,6 +159,9 @@ export function prepareForImport(canvas) {
  *
  * The dialog's codes are the body table's, so each is written as the code the layer's part type reads as the same
  * shade (codeForType in palette-pixels.mjs).
+ *
+ * Every pixel with any alpha is encoded, and its alpha is kept. The canvas stores colour premultiplied by alpha, so
+ * the code of a semi-transparent pixel can come back off by one and read as a different shade.
  * @param {HTMLCanvasElement} canvas      Prepared canvas, changed in place before the crop.
  * @param {Uint16Array} slotMask          One shade code per pixel, from the dialog's buildResult.
  * @param {string} [feccType]             Part type of the layer the pixels become.
@@ -193,7 +196,7 @@ export function applySlotMask(canvas, slotMask, feccType = 'body') {
 
 /**
  * Strip the two rows of interface chrome from the top of a sprite-sheet cell and key out its green background. The
- * background colour is the average of the four corners, which are always background, so a cell captured with
+ * background colour is the average of the four corners, which are always background, so a cell saved with
  * slightly different colours still keys cleanly. The usual green (#A0C898) is keyed out too, in case the corners
  * aren't background. Both match within 30 per channel.
  * @param {HTMLCanvasElement} canvas      Source cell.
@@ -238,7 +241,7 @@ function trimAndChromaKey248x160(canvas) {
 
 /**
  * Where the crop moves this canvas's content: the opaque bounding box, the standard square it lands in, and its
- * offset inside that square. FeccImportPanel._processOne uses it to undo the crop, so a sprite captured from a layer,
+ * offset inside that square. FeccImportPanel._processOne uses it to undo the crop, so a sprite taken from a layer,
  * a tab or a sheet lands back where it was drawn.
  *
  * Measure it after applySlotMask. Removed colours are cut out there, which can shrink the bounding box, and
@@ -370,7 +373,9 @@ function clusterIntoRamps(entries) {
 /**
  * Which palette a ramp belongs to, judged by its middle shade. The rules are checked in order and the first match
  * wins, so they run from most specific to least: warm yellows (trim) before skin, dark warm browns (leather) before
- * any saturated colour (cloth), and greys (metal) as the default.
+ * any saturated colour (cloth), and greys (metal) as the default. Bright pixel-art skin is usually more saturated
+ * than the skin rule allows, and skin hues from 25 to 30 degrees match trim first, so most skin ramps land in trim
+ * or cloth and need placing by hand.
  * @param {object} cluster        A ramp.
  * @returns {string}
  */

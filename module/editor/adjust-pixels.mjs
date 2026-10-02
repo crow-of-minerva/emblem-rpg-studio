@@ -6,10 +6,10 @@
 
 /**
  * Apply hue, saturation, brightness and contrast to the masked pixels, or to all of them. Sprite Studio's adjust
- * tray drives it through `CanvasView#previewSelectionAdjust`, which runs it on every slider move, always from the
- * session's untouched baseline, so dragging a slider back and forth can't stack the adjustment or degrade the
- * image. `CanvasView#commitSelectionAdjust` then keeps whatever the last preview produced. Fully transparent pixels
- * are skipped, so an erased pixel doesn't pick up a colour that a later paint would show.
+ * panel drives it through `CanvasView#previewSelectionAdjust`, which runs it on every slider move, always on a copy
+ * of the pixels from before the adjustment began, so dragging a slider back and forth can't stack the adjustment or
+ * degrade the image. `CanvasView#commitSelectionAdjust` then keeps whatever the last preview produced. Fully
+ * transparent pixels are skipped, so an erased pixel doesn't pick up a colour that a later paint would show.
  * @param {Uint8ClampedArray} data        Pixels, mutated in place.
  * @param {Uint8Array|null} mask          Which pixels to adjust, or null for every pixel.
  * @param {object} params                 Hue in degrees, saturation and brightness in percent, contrast in percent.

@@ -44,8 +44,7 @@ export function closeStudioContextMenu() {
  *
  * The menu is mounted on the document body so the studio's overflow-hidden ancestors can't clip it. Its z-index is
  * set one above the highest rendered window, because ApplicationV2 windows change their inline z-index as they are
- * focused, and a fixed value would eventually put the menu behind the window. It reads the rendered windows because
- * ApplicationV2's own `_maxZ` counter is private.
+ * focused, and a fixed value would eventually put the menu behind the window.
  *
  * After mounting, the menu is measured and moved back inside the viewport if it would overflow an edge. A click
  * elsewhere, Escape, scroll, resize or window blur closes it. A failed action is reported through `notify.failure`,

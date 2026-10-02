@@ -84,7 +84,7 @@ const TONE_BRIGHT_LUMA = 0.65;
 
 /**
  * The colour to flash a tone's own pixels in, chosen so the highlight can't be mistaken for the tone it marks.
- * CanvasView uses it for the colour tray's tone highlight.
+ * CanvasView uses it for the Recolour panel's tone highlight.
  * @param {{r: number, g: number, b: number}|null} rgb    The tone as it is painted.
  * @returns {{r: number, g: number, b: number}}           White, or red on a bright tone, or green on a red one.
  */

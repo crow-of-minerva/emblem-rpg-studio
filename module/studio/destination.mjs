@@ -1,11 +1,12 @@
 /** @layer studio */
 /*
- * Where Submit would point the active tab, held as state.
+ * Where Submit will point the active tab.
  *
- * The three destination selectors under the tab strip show one `DestinationSelection` on the Actor's binding.
- * Character Studio's `_syncTabControls` writes the selection the active tab proposes and renders it, a change on a
- * selector writes the user's choice back, and Submit resolves that selection into a tuple. Nothing reads the
- * `<select>` elements to find out what is pending.
+ * The three destination selectors under the tab strip show one `DestinationSelection`, kept on the Actor's record
+ * in Character Studio (its `binding`, see tab-model.mjs). Character Studio's `_syncTabControls` writes the selection
+ * the active tab proposes and renders it, a change on a selector writes the user's choice back, and Submit turns
+ * that selection into a destination (class, entry and variant type). Nothing reads the `<select>` elements to find
+ * out what is pending.
  *
  * A selection carries what the user picked: a class name, an entry's id or name, and a variant type.
  * `resolveSelectionTuple` turns it into a destination on one Actor, which supplies the entry's stored id and index.
@@ -98,7 +99,7 @@ export function shownValue(options, requested) {
  * so a condition that was reordered or renamed resolves to that entry, not to whatever now sits at its old index.
  * @param {DestinationSelection} selection        The selection.
  * @param {Actor|null} actor                      The Actor it addresses.
- * @returns {object}                              A destination tuple.
+ * @returns {object}                              The destination: class, tab id, entry and type.
  */
 export function resolveSelectionTuple(selection, actor) {
   const classKey = selection.classKey || 'Default';
@@ -118,10 +119,11 @@ export function resolveSelectionTuple(selection, actor) {
 /* -------------------------------------------- */
 
 /**
- * Whether Submit may repoint the active tab, and the tooltip explaining why not. Four things disable it: a
- * spritesheet binds to nothing, the tab already points at the destination, a destination open in another tab would
- * give two tabs writing the same file, and repointing the base token tab would remove it just as closing does. Each
- * refusal has its own tooltip, because a disabled button with no reason looks like a bug.
+ * Whether Submit may repoint the active tab, and the tooltip explaining why not. Five things disable it: a
+ * spritesheet binds to nothing, the Default token has no variants, the tab already points at the destination, a
+ * destination open in another tab would give two tabs writing the same file, and repointing the base token tab
+ * would remove it just as closing does. Each refusal has its own tooltip, because a disabled button with no reason
+ * looks like a bug.
  * @param {object} params
  * @param {object|null} params.tab                The active tab.
  * @param {object[]} params.tabs                  Every tab on this Actor.

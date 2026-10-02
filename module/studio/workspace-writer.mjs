@@ -4,7 +4,7 @@
  * any unsaved pixels, so closing and reopening resumes where the user left off. Almost every interaction changes
  * that, so writes are debounced here instead of made per brush stroke. The window asks for a write, and `release`
  * on close stops one that hasn't fired. Once `finalize` has written the closing state the writer is spent, so a
- * save or dialog that settles after the window closed can't write its emptied state over the workspace.
+ * save or dialog that finishes after the window closed can't write its emptied state over the workspace.
  */
 
 /* -------------------------------------------- */
@@ -21,9 +21,10 @@ const WORKSPACE_FLUSH_MS = 4000;
 /**
  * Bind the workspace write to one studio window.
  *
- * `serialize` is `EmblemCharacterStudio._serializeWorkspace` and `save` is `saveStudioWorkspace`, which writes the
- * sidecar file for staff and the browser's own draft store for an allowed Trusted Player. A failure on either side
- * loses only the session's layout, not the studio, so both are reported and swallowed.
+ * `serialize` is `EmblemCharacterStudio._serializeWorkspace` and `save` is `saveStudioWorkspace`, which writes a
+ * workspace file beside the world for the Gamemaster and Assistant GMs, and the browser's own draft store for
+ * everyone else, including a user whose access was removed. A failure on either side loses only the session's
+ * layout, not the studio, so both are reported and swallowed.
  * @param {object} params
  * @param {Function} params.serialize             Flattens the current state into a workspace blob.
  * @param {Function} params.save                  Writes one blob, and may return a promise.

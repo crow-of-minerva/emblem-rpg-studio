@@ -2,7 +2,8 @@
 
 /**
  * Slugify for a filename or a URL segment: punctuation dropped, runs of whitespace collapsed to single hyphens.
- * Case is preserved, since the result is often shown back to the user.
+ * Case is preserved, since the result is often shown back to the user. Only ASCII letters, digits, `_` and `-`
+ * survive, so a name written only in another script (Japanese, say) comes back as `fallback`.
  * @param {*} s                  Value to slugify.
  * @param {string} [fallback]    Returned when nothing survives.
  * @returns {string}
@@ -18,9 +19,9 @@ export function slugifyHyphen(s, fallback = '') {
 /* -------------------------------------------- */
 
 /**
- * Slugify for an identifier: everything outside word characters and hyphens becomes an underscore, runs collapse,
- * and leading and trailing underscores are trimmed. Unlike `slugifyHyphen` this replaces punctuation rather than
- * dropping it, so two names that differ only in punctuation stay distinct.
+ * Slugify for an identifier: everything outside ASCII letters, digits, `_` and `-` becomes an underscore, runs
+ * collapse, and leading and trailing underscores are trimmed. Unlike `slugifyHyphen` this replaces punctuation
+ * rather than dropping it, so two names that differ only in punctuation stay distinct.
  * @param {*} s                  Value to slugify.
  * @param {string} [fallback]    Returned when nothing survives.
  * @returns {string}

@@ -18,9 +18,9 @@ const notify = createStudioNotifier(import.meta.url);
 /**
  * The stored allowlist, reduced to well-formed ids.
  *
- * Empty unless the server stamped a Gamemaster as its last writer. An Assistant GM can write world settings past
- * vetoAllowlistWrite, for example with `noHook`, and the stamp is the one record every client and the host can trust.
- * Also empty while the setting is not registered yet, so an early reader is refused rather than admitted.
+ * The list counts only if the Gamemaster saved it last: Foundry's server records who last changed a setting
+ * (`_stats.lastModifiedBy`), and an Assistant GM could skip vetoAllowlistWrite, for example with `noHook`. Otherwise
+ * it reads as empty, as it does while the setting is not registered yet, so an early reader is refused.
  * @returns {readonly string[]}
  */
 export function readTrustedAllowlist() {
@@ -99,8 +99,8 @@ export function ownsItem(user, item) {
 /* -------------------------------------------- */
 
 /**
- * Whether a user, by default the signed-in one, may use Studio's tools at all: staff, or a Trusted Player the
- * Gamemaster has listed. Scene Crop, the allowlist and staff drafts ask isStudioStaff instead.
+ * Whether a user, by default the signed-in one, may use Studio's tools at all: the Gamemaster, an Assistant GM, or
+ * a Trusted Player the Gamemaster has listed. Scene Crop and changing the allowlist have their own, stricter checks.
  * @param {User} [user]
  * @returns {boolean}
  */
@@ -139,7 +139,7 @@ export function refuseStudio(code, detail = '') {
 /**
  * Refuse a write of the allowlist from anyone but the Gamemaster. Registered on `preCreateSetting` and
  * `preUpdateSetting` in foundry/hooks.mjs. Foundry lets Assistant GMs change world settings, so this local check
- * keeps the list in the Gamemaster's hands. The host still rechecks the list on every publication.
+ * keeps the list in the Gamemaster's hands. The host still rechecks the list on every save it handles.
  * @param {Setting} document        The Setting being created or updated.
  * @returns {false|void}
  */

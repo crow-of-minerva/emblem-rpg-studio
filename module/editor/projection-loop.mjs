@@ -1,12 +1,12 @@
 /** @layer editor */
 
 /* -------------------------------------------- */
-/*  Projection Loop                             */
+/*  Token Preview Loop                          */
 /* -------------------------------------------- */
 
 /**
  * The animation-frame loop behind the token scale preview. `CanvasView#_buildProjectionOverlay` creates one on the
- * token side, with a sync that copies the working canvas onto the projection each frame. `CanvasView#setPreview`
+ * token side, with a sync that copies the working canvas onto the preview canvas each frame. `CanvasView#setPreview`
  * starts and stops it, and `CanvasView#destroy` releases it. The loop is running exactly when a frame is requested.
  * A released loop never starts again, so a late `setPreview(true)` on a destroyed view does nothing.
  */

@@ -28,10 +28,10 @@ const notify = createStudioNotifier(import.meta.url);
 /**
  * Studio's socketlib channel, once registered.
  *
- * This file connects host publication (publication.mjs) to Foundry and socketlib. Studio has its own channel
- * instead of a system command because a publication writes one file and none of the game's documents, and the host
+ * This file connects the save checks in publication.mjs to Foundry and socketlib. Studio has its own channel
+ * instead of a system command because a save writes one file and none of the game's documents, and the host
  * rechecks everything itself. It still sends to the system's command host, the single connected full Gamemaster, so
- * an Assistant GM never publishes for anyone. Routing through a system command later would replace only this file.
+ * an Assistant GM never saves for anyone.
  * @type {object|null}
  */
 let socket = null;
@@ -39,8 +39,9 @@ let socket = null;
 /* -------------------------------------------- */
 
 /**
- * The host ports every publisher shares: who the host and the sender are, how the host writes, and every document
- * that points at a file, with who owns it, for the checks that stop a Trusted Player overwriting a file in use.
+ * The Foundry-side functions ("ports") every host publisher is given: who the host and the sender are, how the host
+ * writes, and every document that points at a file, with who owns it, for the checks that stop a Trusted Player
+ * overwriting a file in use.
  * @type {Readonly<object>}
  */
 const hostPorts = Object.freeze({
@@ -92,7 +93,7 @@ const sharedFileHost = createSharedFileHost({
 /* -------------------------------------------- */
 
 /**
- * The ports a client's publisher asks the host through, sending on one socket operation.
+ * The functions a client's publisher uses to reach the host, sending on one socket operation.
  * @param {string} operation
  * @returns {object}
  */
@@ -128,12 +129,15 @@ const sharedFileClient = createSharedFileClient({
  * Open Studio's channel and answer publications, shared-file writes and listings on it, then route this client's
  * own writes and listings that Foundry won't take directly through it. Registered on `socketlib.ready` in
  * foundry/hooks.mjs. Every client registers the handlers, and each handler refuses unless its client is the
- * eligible host.
+ * command host.
  */
 export function registerStudioPublication() {
   if (socket || !globalThis.socketlib) return;
   socket = globalThis.socketlib.registerModule(MODULE_ID) ?? null;
   if (!socket) return;
+  // `this.socketdata.userId` is the sender. socketlib fills it from the user id Foundry's server attaches to every
+  // socket message (or with this client's own id when the host sends to itself), so a player cannot forge it. Every
+  // check the host makes about who is asking rests on this id.
   socket.register(STUDIO_PUBLICATION_OPERATION, async function answerPublication(request) {
     const senderId = this?.socketdata?.userId;
     return senderGate.run(senderId, () => publicationHost.publish(request, senderId));
@@ -202,12 +206,12 @@ function refuseUnlessAdmitted() {
 /**
  * Save one Actor art file the way its saver's access allows. Character Studio's save paths call it.
  *
- * Staff who can upload write the file directly. Anyone else allowed, including an allowed Trusted Player, publishes
- * it through the host, which picks the Actor's folder itself. Every refusal throws a StudioRefusal, which a save
- * path reports as a plain warning while the canvas and its drafts stay as they were.
+ * Staff (the Gamemaster and Assistant GMs) who can upload write the file directly. Anyone else allowed, including an
+ * allowed Trusted Player, sends it through the host, which picks the Actor's folder itself. Every refusal throws a
+ * StudioRefusal, which a save path reports as a plain warning while the canvas and its drafts stay as they were.
  * @param {object} options
  * @param {Actor} options.actor                   Actor the art belongs to.
- * @param {string} options.folder                 Folder a staff save writes into.
+ * @param {string} options.folder                 Folder a direct save writes into.
  * @param {string} options.filename               File name within the Actor's folder.
  * @param {Blob} options.blob                     PNG contents.
  * @returns {Promise<string>}                     The stored path.
@@ -236,7 +240,7 @@ export async function publishActorArtFile({ actor, folder, filename, blob }) {
  * any other Item references. Every refusal throws a StudioRefusal.
  * @param {object} options
  * @param {Item} options.item                     Item the art belongs to.
- * @param {string} options.folder                 Folder a staff save writes into.
+ * @param {string} options.folder                 Folder a direct save writes into.
  * @param {string} options.filename               File name within that folder.
  * @param {Blob} options.blob                     PNG contents.
  * @returns {Promise<string>}                     The stored path.
@@ -350,8 +354,8 @@ function ownsDocument(document, user) {
 /* -------------------------------------------- */
 
 /**
- * Whether a system command is still resolving, read from the same processing snapshot the system's input guards
- * use. The publishers and the publication hosts refuse a save while one is.
+ * Whether a system command is still resolving, read from the same processing state the system's input guards
+ * use. Saves are refused while one is.
  */
 function processingActive() {
   return game.emblemRpg?.api?.protocol?.execution?.()?.owner != null;

@@ -1,4 +1,8 @@
 /** @layer character-studio/fecc */
+/*
+ * The Shadow button on Character Studio's avatar rail. It paints a contact shadow into the face layer where the hair
+ * meets the skin, written as skin shade codes so it follows later changes to the skin palette.
+ */
 import { createStudioNotifier } from '../../foundry/notify.mjs';
 
 /* -------------------------------------------- */

@@ -18,14 +18,13 @@ function editSerialOf(view) {
 }
 
 /* -------------------------------------------- */
-/*  Baseline                                    */
+/*  Saved State                                 */
 /* -------------------------------------------- */
 
 /**
  * Record a pane's state after it's loaded or saved: the edit counter, plus everything a save would write for each
  * layer (position, transform, visibility, palette and custom name). Every layer is recorded, since token sprites
- * usually have several (body, hair, parts). Called by Character Studio's _loadTabContent, _applyPaneSwitch and
- * _captureSaveRequest. viewPristine compares against the result.
+ * usually have several (body, hair, parts). viewPristine compares against the result.
  * @returns {object|null} null if there's no view.
  */
 export function snapshotInitial(view) {
@@ -42,7 +41,7 @@ export function snapshotInitial(view) {
       flipY:    !!L.flipY,
       opacity:  L.opacity ?? 1,
       visible:  L.visible !== false,
-      // Recorded directly because some palette changes bypass the colour tray and don't bump the edit counter.
+      // Recorded directly because some palette changes bypass the colour panel and don't bump the edit counter.
       palette:  L._feccPalette ? JSON.stringify(L._feccPalette) : null,
       // Renaming doesn't bump the edit counter either, but the name is saved.
       customName: L.customName ?? null
@@ -55,8 +54,7 @@ export function snapshotInitial(view) {
 /**
  * Whether a pane still matches the state snapshotInitial recorded. With nothing recorded it counts as edited,
  * because wrongly calling a pane clean loses work. Positions and transforms are compared with a small tolerance,
- * since saving and reloading can shift floating-point values slightly. Used by the dirty checks in tab-model.mjs
- * and by Character Studio's save and workspace code.
+ * since saving and reloading can shift floating-point values slightly.
  */
 export function viewPristine(view, init) {
   if (!view || !init || !Array.isArray(init.layers)) return false;
@@ -142,8 +140,7 @@ export function wouldLoseWork({ bound, dirty, tokenLayers = 0, avatarLayers = 0 
 /**
  * The actor entries to save in the workspace, with held entries added back. An actor the user can't open right
  * now (its ownership was removed) is held instead of dropped, so its unsaved panes survive until it can be
- * opened again. If the same actor was also opened this session, the fresh entry wins. Called by
- * EmblemCharacterStudio._serializeWorkspace.
+ * opened again. If the same actor was also opened this session, the fresh entry wins.
  * @param {object[]} actors Entries serialised from the actors open in the studio.
  * @param {Map<string, {entry: object}>} held Held entries by actor id.
  * @returns {object[]}

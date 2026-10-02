@@ -105,7 +105,8 @@ function paletteHash(p) {
  * Recolour a palette-indexed layer into `layer._recolourCache`, which CanvasView draws instead of the source.
  * Character Studio binds it as each view's recolour pass (_mountTabSide). The cache is reused until the palette or
  * the layer's part type changes, since one palette recolours a face differently from a body. A cross-origin image
- * can't be read: that is reported through notify.failure and the layer keeps showing its source.
+ * can't be read: that is reported through notify.failure and the layer keeps showing its source. A pixel edit
+ * doesn't change the key, so code that changes a layer's pixels must clear `layer._recolourCacheKey` first.
  * @param {object} layer                  Layer to recolour.
  * @param {object} palette                The palette.
  */

@@ -1,10 +1,8 @@
 /* ===========================================================
  * Emblem Character Studio
- * Standalone tabbed editor — wraps the existing token-editor
- * panes per tab. Re-uses .ete-* classes inside each tab pane,
- * so the existing token-editor.css applies; styles here only
- * cover studio-specific chrome (tabs strip, actor switcher,
- * tab controls row, empty state).
+ * Studio-specific chrome only (tab strips, actor switcher,
+ * tab controls row, empty state). The shared .ete-* editor
+ * styles used inside each tab pane are in sprite-studio.css.
  * =========================================================== */
 .emblem-character-studio {
   max-height: 100vh !important;
@@ -52,7 +50,7 @@
   color: var(--sts-mu);
 }
 
-/* ---------- Bound state shell ---------- */
+/* ---------- Loaded-actor shell ---------- */
 .ets-bound {
   flex: 1 1 auto;
   display: flex;
@@ -78,9 +76,8 @@
 }
 .ets-tabs-strip::-webkit-scrollbar { display: none; }
 
-/* Tab is a two-button wrap (select + close) so the close's data-action
- * isn't masked by the outer button's activation. The wrap owns the resting
- * slot; the inner buttons are transparent. */
+/* Each tab is a draggable wrap around one button. The wrap draws the
+ * resting and active chip; the button is transparent. */
 .ets-tab-wrap {
   display: inline-flex;
   align-items: center;
@@ -100,8 +97,8 @@
   box-shadow: var(--sts-chip-fx);
 }
 .ets-tab-wrap.is-unbound { font-style: italic; opacity: 0.85; }
-/* Spritesheet scratch tabs read as a distinct kind, not just another
- * unbound tab: upright gold label + grid icon. */
+/* Spritesheet tabs read as a distinct kind, not just another scratch
+ * tab: upright gold label + grid icon. */
 .ets-tab-wrap.is-spritesheet { font-style: normal; opacity: 1; }
 .ets-tab-wrap.is-spritesheet .ets-tab-label {
   color: var(--sts-gold);
@@ -196,7 +193,7 @@
  * grouping reads as class → its variants. */
 .ets-class-strip + .ets-tabs-strip { padding-left: 31px; }
 
-/* ---------- Tuple selectors row ---------- */
+/* ---------- Class / entry / type selectors row ---------- */
 .ets-tab-controls {
   display: flex;
   align-items: flex-end;
@@ -320,10 +317,9 @@
   overflow: hidden;
 }
 
-/* Avatar pane in read-only state: the editing CHROME is greyed + non-interactive,
- * but the canvas stays crisp — it shows a live mirror of the Default:Default
- * profile avatar (.ete-avatar-mirror). The CSS gate complements the JS gate
- * (which sets disabled on form controls). */
+/* Read-only avatar pane (every tab but the base one): the editing controls are
+ * greyed and ignore the pointer, but the canvas stays crisp, since it shows the
+ * actor's portrait (.ete-avatar-mirror). The JS also disables the form controls. */
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-toolbar,
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-tools,
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-layers,
@@ -335,8 +331,8 @@
   pointer-events: none;
 }
 
-/* Live, read-only reflection of the Default:Default profile avatar, overlaid on
- * the (dormant) canvas of every non-editable variant. */
+/* Read-only copy of the actor's portrait, laid over the unused avatar canvas
+ * on every tab but the base one. */
 .ete-canvas-mount > .ete-avatar-mirror {
   position: absolute;
   inset: 0;
@@ -490,10 +486,9 @@
 }
 
 /* ---------- FECC rail extras (per-category split) ----------
- * The studio's token rail carries up to 9 tabs (Colour + 6 categories + Export
- * + Import); the token-editor rail was sized for 4. Scroll the rail vertically
- * and tighten the tab minimum. A `.fecc-rail-spacer` between Export and Import
- * grows to fill the rail so Import stays anchored at the bottom edge. */
+ * The studio's rail holds a tab per part category plus Colour, Export and
+ * Import, so it scrolls vertically and uses a smaller tab minimum. The
+ * `.fecc-rail-spacer` pushes Export and Import to the bottom of the rail. */
 .emblem-character-studio .fecc-rail {
   overflow-y: auto;
   scrollbar-width: none;

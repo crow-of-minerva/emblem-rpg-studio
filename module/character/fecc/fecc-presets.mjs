@@ -1,7 +1,7 @@
 /** @layer character-studio/fecc */
 /*
  * Save and load Studio projects, for Character Studio's project save and load buttons. A project is a JSON
- * snapshot of one actor's whole studio session, saved to `worlds/<world>/emblem/projects/<name>.json`. It holds:
+ * copy of one actor's whole studio session, saved to `worlds/<world>/emblem/projects/<name>.json`. It holds:
  *   - every open tab, with the (Class, Condition, Type) destination it is bound to and, for a spritesheet tab, its
  *     name and canvas size
  *   - every layer on both panes of every tab: transform, visibility, flip, opacity, palette, whether its pixels were
@@ -148,7 +148,7 @@ function projectClassTab(tab) {
 }
 
 /**
- * Snapshot the whole studio session for the bound actor, bound and scratch tabs alike, or null with no actor bound.
+ * Gather the whole studio session for the bound actor, bound and scratch tabs alike, or null with no actor bound.
  * The caller, showProjectSaveDialog, creates every tab's canvas first, because a tab not opened this session has no
  * canvas to read, and reading its stored composition instead would save the destination's art in place of the
  * tab's own.
@@ -200,7 +200,7 @@ function serializeProject(studio) {
 }
 
 /* -------------------------------------------- */
-/*  Control Panel Reconciliation                */
+/*  Control Panel Setup                         */
 /* -------------------------------------------- */
 
 /**
@@ -233,7 +233,7 @@ async function worldClassNames(actor) {
 
 /**
  * Create the class tabs and conditions the project needs and the actor lacks, through reconcileTokenTabs. Nothing
- * the actor already has is changed, since the actor is the live document and the project only a snapshot.
+ * the actor already has is changed, since the actor is the live document and the project only a saved copy.
  *
  * A tab named for a Class this world doesn't have is still created, because the project is what the user asked to
  * load. The Control Panel wouldn't create such a tab itself, so those names are returned in `unbackedTabs` for
@@ -288,11 +288,12 @@ async function applyPane(studio, tab, side, payload) {
 }
 
 /**
- * The tuple a project tab should bind to on the actor it is loading onto. The class tab id is looked up again by
- * class name, because ids are per actor: on another actor, or on tabs reconcileControlPanel just created, the stored
- * id names nothing. The stored condition id is kept only when the tab id still matches.
+ * The (Class, Condition, Type) destination a project tab should bind to on the actor it is loading onto. The class
+ * tab id is looked up again by class name, because ids are per actor: on another actor, or on tabs
+ * reconcileControlPanel just created, the stored id names nothing. The stored condition id is kept only when the
+ * tab id still matches.
  * @param {Actor} actor                   The actor.
- * @param {object} tuple                  The stored tuple.
+ * @param {object} tuple                  The stored destination.
  * @returns {object}
  */
 function rebindTuple(actor, tuple) {
@@ -313,7 +314,7 @@ function rebindTuple(actor, tuple) {
  * on their name. Scratch tabs never match, because they have no destination to tell them apart, and merging two
  * would lose one.
  * @param {object} studio                 Character Studio.
- * @param {object} binding                The actor's binding.
+ * @param {object} binding                The bound actor's studio state, which holds its open tabs.
  * @param {object} source                 The project tab.
  * @param {object|null} tuple             The rebound destination.
  * @returns {object}
@@ -338,8 +339,10 @@ function findOrCreateTab(studio, binding, source, tuple) {
 /**
  * Rebuild the bound actor's studio session from a project, after the user confirms the load.
  *
- * The Control Panel is reconciled first, so every class tab the project's destinations name exists before a tuple
- * is bound to it. A tuple bound to a missing class tab resolves to no destination, and its saves are refused.
+ * The Control Panel's missing class tabs are created first (reconcileControlPanel), so every class tab the project's
+ * destinations name exists before a tab is bound to it. A tab bound to a missing class tab resolves to no
+ * destination, and its saves are refused. Only palettes are checked up front, so a malformed pane stops the load
+ * after the Control Panel has already changed.
  *
  * Palettes are restored before the panes, onto the tab and onto an open view as well, because the view's recolour
  * pass holds the tab's palette object by reference.

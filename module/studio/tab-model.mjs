@@ -1,12 +1,13 @@
 /** @layer studio */
 /*
  * Character Studio's actor and tab model, with no DOM access. `character/character-studio.mjs` owns the window, and
- * this file owns what the window shows. One binding per loaded Actor holds that Actor's tabs and which of them is
- * active. Every change to that state goes through a function here, and the tab strip, the class rows and the
- * destination selectors only display it.
+ * this file owns what the window shows. Each loaded Actor has one record (its "binding") holding its tabs and which
+ * of them is shown. Every change to that state goes through a function here, and the tab strip, the class rows and
+ * the destination selectors only display it.
  *
- * A tab addresses one destination (class, entry and type) through its tuple, or nothing at all: a scratch tab, of
- * which a spritesheet is one kind. Its canvases, panels and pane DOM are built on first activation.
+ * A tab edits one art destination (class, entry and variant type, kept as its `tuple`), or nothing at all: a
+ * scratch tab, of which a spritesheet is one kind. Its canvases, panels and pane DOM are built the first time it is
+ * shown.
  */
 
 import { defaultPalette } from '../character/fecc/fecc-recolour.mjs';
@@ -36,9 +37,9 @@ import {
 /**
  * One tab: an editing surface for a destination, or a scratch canvas with none.
  *
- * Everything marked "Materialised" is built by the window on first activation and torn down when the tab closes, so
- * a tab that has never been shown costs one object. The "Baseline" fields tell a save and the unsaved-work dot
- * whether the canvas has changed from what is stored.
+ * Fields marked "Built on first show" are created the first time the tab is shown and torn down when it closes, so a
+ * tab that has never been shown costs one object. Fields marked "Baseline" hold each pane's clean state, which a save
+ * and the unsaved-work dot compare against to tell whether the canvas has changed from what is stored.
  * @typedef {object} StudioTab
  * @property {string} id                              Identity, kept across workspace saves.
  * @property {string} actorId                         Fixed at creation. Async work finds its Actor through this.
@@ -48,12 +49,12 @@ import {
  * @property {string|null} [sheetId]                  The on-Actor sheet record it reopens from.
  * @property {string|null} [sheetName]                That record's name.
  * @property {number|null} [sheetSize]                That record's world size.
- * @property {object|null} avatarView                 Materialised: the avatar CanvasView.
- * @property {object|null} tokenView                  Materialised: the token CanvasView.
- * @property {HTMLElement|null} domRoot               Materialised: the pane root.
- * @property {HTMLElement|null} avatarPane            Materialised: the avatar pane.
- * @property {HTMLElement|null} tokenPane             Materialised: the token pane.
- * @property {object} feccPanels                      Materialised: the side-rail panels, per side.
+ * @property {object|null} avatarView                 Built on first show: the avatar CanvasView.
+ * @property {object|null} tokenView                  Built on first show: the token CanvasView.
+ * @property {HTMLElement|null} domRoot               Built on first show: the pane root.
+ * @property {HTMLElement|null} avatarPane            Built on first show: the avatar pane.
+ * @property {HTMLElement|null} tokenPane             Built on first show: the token pane.
+ * @property {object} feccPanels                      Built on first show: the side-rail panels, per side.
  * @property {Promise|null} [_loadPromise]            The first load, once `beginTabLoad` has been called.
  * @property {object} [_loadsRunning]                 Loads running per pane, the first one or a repoint's.
  * @property {boolean} [loadFailed]                   Whether that load failed, which blocks a save over the pane.
@@ -62,7 +63,7 @@ import {
  * @property {object|null} initialToken               Baseline: the token pane's clean state.
  * @property {boolean} avatarNeedsMigrate             Baseline: loaded art must re-export pixel-perfect on save.
  * @property {boolean} tokenNeedsMigrate              The same for the token pane.
- * @property {object|null} _pendingPixelsAvatar       Workspace-restored pixels, applied on first materialisation.
+ * @property {object|null} _pendingPixelsAvatar       Workspace-restored pixels, applied when first shown.
  * @property {object|null} _pendingPixelsToken        The same for the token pane.
  * @property {object|null} [_pendingMovedLayers]      Layers moved here before it had views.
  * @property {object} palettes                        The per-side palettes the recolour engine holds by reference.
@@ -146,10 +147,10 @@ export function createTab(binding, { bound, tuple }) {
     actorId: binding.actorId,
     bound: !!bound,
     tuple: bound ? tuple : null,
-    // CanvasViews, populated when the tab DOM is materialized.
+    // CanvasViews, built the first time the tab is shown.
     avatarView: null,
     tokenView: null,
-    // Workspace-restored pixel payloads, applied on first materialisation then cleared.
+    // Workspace-restored pixel payloads, applied the first time the tab is shown, then cleared.
     _pendingPixelsAvatar: null,
     _pendingPixelsToken: null,
     // Clean baselines (shape: snapshotInitial in character/dirty-state.mjs).
@@ -567,14 +568,14 @@ export function bulkCloseCandidates(binding, row) {
 /* -------------------------------------------- */
 
 /**
- * Start a tab's first art load and record how it settles.
+ * Start a tab's first art load and record how it ends.
  *
  * The failure is recorded on the tab as well as reported, because a pane whose art failed to load looks just like
  * one the user emptied, and Save All would then clear the stored art. A load that throws can't say which pane it
  * was on, so both panes count as failed.
  * @param {Promise} loading               The load.
  * @param {Function} [onFailure]          Reports a failed load to the user.
- * @returns {Promise<void>}               Settles either way. `_ensureAllTabsMaterialized` awaits these.
+ * @returns {Promise<void>}               Resolves either way. `_ensureAllTabsMaterialized` awaits these.
  */
 export function beginTabLoad(tab, loading, onFailure) {
   tab._loadPromise = Promise.resolve(loading).then(
@@ -669,7 +670,7 @@ export function pendingPixels(tab, side) {
 /* -------------------------------------------- */
 
 /**
- * Queue a layer for a tab that hasn't been materialised yet. `_loadTabContent` applies these after it clears and
+ * Queue a layer for a tab that hasn't been shown yet. `_loadTabContent` applies these after it clears and
  * loads the destination art, so that load can't wipe them.
  * @param {object} clip           The clipboard recipe.
  */

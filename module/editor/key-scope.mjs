@@ -4,7 +4,10 @@
 /*  Studio Keyboard Scope                       */
 /* -------------------------------------------- */
 
-/** The key events a Studio window keeps from Foundry. Key-ups pass, since Foundry's only forget a held key. */
+/**
+ * The key events a Studio window keeps from Foundry. Key releases still reach Foundry, which only uses them to forget
+ * a held key.
+ */
 const SCOPED_KEY_EVENTS = Object.freeze(['keydown', 'keypress']);
 
 /* -------------------------------------------- */

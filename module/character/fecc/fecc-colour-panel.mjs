@@ -188,16 +188,13 @@ async function loadPrefabs() {
 /* -------------------------------------------- */
 
 /**
- * Alpha below which a pixel has no colour to list. Recolour mode lists colours exactly: every distinct colour gets
- * its own row, and each pixel belongs to its own colour's row. Nothing is merged or capped, so every colour can be
- * edited on its own.
+ * Pixels with less alpha than this are left out of the colour list.
  * @type {number}
  */
 const RECOLOUR_ALPHA_MIN = 1;
 
 /**
- * The label map's value for a transparent pixel. The map is a signed 32-bit array, because the number of tones has
- * no limit and can pass what 16 bits could hold.
+ * Label-map value for a transparent pixel.
  * @type {number}
  */
 const TONE_NONE = -1;
@@ -210,8 +207,8 @@ const TONE_NONE = -1;
 const RECOLOUR_ROW_CHUNK = 200;
 
 /**
- * Above this many tones the list is sorted by brightness instead of chained by nearest colour. The chain takes
- * quadratic time, and past this point the wait costs more than the nicer order is worth.
+ * Above this many tones the list is sorted by brightness instead of chained by nearest colour, which takes
+ * quadratic time.
  * @type {number}
  */
 const RECOLOUR_ORDER_NN_MAX = 1200;
@@ -491,7 +488,8 @@ export class FeccColourPanel extends Panel {
    * Rescan the bound layer after its pixels change, so the swatches follow the user's edits. The studios' canvas
    * views call it from onLayerStateChanged.
    *
-   * Recolour mode works from a snapshot taken when the layer was bound, so it doesn't rebuild after its own writes.
+   * Recolour mode works from a copy of the pixels taken when the layer was bound, so it doesn't rebuild after its
+   * own writes.
    * When something else changes the pixels (a brush stroke or an undo), replaying the old mapping would undo that
    * edit, so the state is rebuilt from the new pixels.
    */
@@ -544,8 +542,8 @@ export class FeccColourPanel extends Panel {
   }
 
   /**
-   * Snapshot a layer's pixels and list its tones. Every preview is drawn from this snapshot, not from the live
-   * canvas, so changing one tone several times doesn't compound.
+   * Copy a layer's pixels and list its tones. Every preview is drawn from this copy, not from the live canvas, so
+   * changing one tone several times doesn't compound.
    * @param {object} layer          The layer.
    * @returns {object}
    */
@@ -901,8 +899,8 @@ export class FeccColourPanel extends Panel {
 
   /**
    * React to a canvas selection change, from the view's onSelectionMaskChange. When the change also rewrote pixels
-   * ('pixels'), the recolour state is dropped, because its snapshot no longer matches the canvas. A change to the
-   * selection alone only needs a re-render.
+   * ('pixels'), the recolour state is dropped, because its copy of the pixels no longer matches the canvas. A change
+   * to the selection alone only needs a re-render.
    * @param {string} reason         What changed.
    */
   onCanvasSelectionChanged(reason) {
@@ -912,7 +910,7 @@ export class FeccColourPanel extends Panel {
   }
 
   /**
-   * Redraw the layer's pixels from the snapshot, each tone in its new colour. Alpha is copied from the snapshot, so
+   * Redraw the layer's pixels from the stored copy, each tone in its new colour. Alpha is taken from the copy, so
    * soft edges stay soft. The self-writing flag is set around the redraw, so the tray's own write isn't taken for an
    * outside edit (_recolourPixelsChanged).
    * @param {object} [opts]
@@ -1542,7 +1540,8 @@ export class FeccColourPanel extends Panel {
 
 /**
  * Place a nearly invisible colour input at the right edge of its swatch. The browser opens its colour picker at the
- * input's position, so this keeps the picker next to the swatch being edited.
+ * input's position, so this keeps the picker next to the swatch being edited. Each picker removes its input on the
+ * `change` event. Closing the picker without choosing a new colour fires no `change`, so the input stays on the page.
  * @param {HTMLInputElement} inp          The hidden input.
  * @param {HTMLElement} swatchEl          The swatch it belongs to.
  */
@@ -1567,8 +1566,7 @@ function positionInvisibleColorInput(inp, swatchEl) {
  * @param {HTMLInputElement} inp          The input.
  */
 function openColorPicker(inp) {
-  // Layout flush: a just-appended input has no bounding rect yet and the
-  // popup would occasionally anchor at (0, 0).
+  // Force layout so the picker opens beside the swatch, not in the corner.
   void inp.offsetWidth;
   if (typeof inp.showPicker === 'function') {
     try { inp.showPicker(); return; } catch (_) {

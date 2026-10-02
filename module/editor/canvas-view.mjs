@@ -29,9 +29,9 @@ const notify = createStudioNotifier(import.meta.url);
 /* -------------------------------------------- */
 
 /**
- * Context options for the offscreen working canvases. Their pixels are read back often (undo snapshots, cut, move
+ * Context options for the offscreen working canvases. Their pixels are read back often (undo entries, cut, move
  * and recolour), so they are kept in CPU memory, which also stops the browser's repeated-readback warning. The
- * on-screen display and projection canvases don't use these options and stay on the GPU.
+ * on-screen display and token preview canvases don't use these options and stay on the GPU.
  * @type {object}
  */
 const READ_BACK = { willReadFrequently: true };
@@ -160,8 +160,9 @@ function placeLayerAt(layer, x, y) {
  * the recolour pass.
  *
  * Three coordinate spaces are in use. Pointer events arrive in screen pixels. Canvas cells are the grid every layer
- * sits on. Layer-source pixels differ per layer by its own transform. Tools convert screen to canvas
- * (`_toCanvasCoords`) and then canvas to layer (`_canvasCellToLayer`, `ImageLayer#canvasToLayer`).
+ * sits on. Layer pixels are the pixels of each layer's own image, which its transform places on the grid. Tools
+ * convert screen to canvas (`_toCanvasCoords`) and then canvas to layer (`_canvasCellToLayer`,
+ * `ImageLayer#canvasToLayer`).
  *
  * The view saves nothing itself. It reports changes through its callback properties (`onSelectionChange`,
  * `onLayerStateChanged` and the rest), and the studio decides what to save.
@@ -175,7 +176,7 @@ export class CanvasView {
    * The selected layer is set on `_selectedLayer` rather than through its setter, so `onSelectionChange` doesn't
    * fire before the caller has assigned it. The brush display colour is not set here: it is a getter over the
    * per-side store `_sharedBrushDisplay`, and writing it would reset the shared colour whenever a new tab opens a
-   * view. The scale-preview projection is only built on the token side, since an avatar is never shown on a grid.
+   * view. The token scale preview is only built on the token side, since an avatar is never shown on a grid.
    * @param {object} opts
    * @param {number} [opts.size]                    Grid side length.
    * @param {HTMLElement} opts.mountEl              Where the canvas mounts.
@@ -243,9 +244,10 @@ export class CanvasView {
     this.activeTool = 'pan';
     this.selection = null; // { layerId, w, h, mask: Uint8Array, ox, oy }
     this._floating = null; // the lifted pixels during a move (see _beginFloatingMove)
-    // The live colour-adjustment session on the selection: { layerId, w, h, baseline (ImageData), mask }. Each
-    // preview starts again from `baseline`, so adjustments never stack. It is not a pointer gesture: Sprite
-    // Studio's adjust tray drives it from its sliders, and a canvas drag can run at the same time.
+    // The live colour adjustment on the selection: { layerId, w, h, baseline (ImageData), mask }. `baseline` is a
+    // copy of the pixels from before the adjustment began, and each preview starts again from it, so adjustments
+    // never stack. It is not a pointer gesture: Sprite Studio's adjust panel drives it from its sliders, and a canvas
+    // drag can run at the same time.
     this._adjustSession = null;
 
     // Undo and redo (edit-history.mjs). A closed run of arrow-key nudges is recorded as one transform entry.
@@ -447,7 +449,8 @@ export class CanvasView {
       if (p) this._feccRecolour?.(layer, p);
     }
     // The parts library compares these to decide whether the user has changed the layer since it was added. Pixel
-    // edits are tracked by `_editable`.
+    // changes are tracked by `_editable`, which is also set when a selection tool or a copy turns the image into a
+    // canvas.
     layer._pristineScale       = layer.scale;
     layer._pristinePaletteHash = layer._feccPalette ? JSON.stringify(layer._feccPalette) : null;
 
@@ -724,8 +727,9 @@ export class CanvasView {
 
   /**
    * A URL for a layer's row thumbnail. An image element's own `src` is used as is. A canvas (the recoloured cache or
-   * an editable layer) is encoded as a PNG data URL. The result is cached against the edit counter and the source
-   * object, so it is only re-encoded after a change, not on every panel rebuild.
+   * an editable layer) is encoded as a PNG data URL. The result is cached against the view's edit counter and the
+   * source object. The counter covers every layer, so after an edit to any layer each canvas-backed thumbnail is
+   * encoded again on the next panel rebuild.
    * @param {object} layer          The layer.
    * @returns {string}
    */
@@ -792,7 +796,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Commit a floating move before an operation that reads layer pixels.
+   * Commit a floating move before an operation that reads layer pixels. Committing can resize the layer, so call
+   * this before working out layer coordinates.
    * @private
    */
   _flushFloating() {
@@ -1198,7 +1203,7 @@ export class CanvasView {
    * Lay the highlight over the art the user is looking at.
    *
    * That is the working canvas, except while the Token Render preview is shown. setPreview() dims the working canvas
-   * and draws the art on the projection canvas at its on-board scale, so the highlight then takes the projection's
+   * and draws the art on the preview canvas at its on-board scale, so the highlight then takes the preview canvas's
    * transform and stacks above it. _applyViewTransform() and _applyProjectionScale() call this on every change.
    * @private
    */
@@ -1287,8 +1292,8 @@ export class CanvasView {
     const layer = this.layers.find(l => l.id === this._floating.layerId);
     if (!layer) return;
     // Use the layer's own draw transform, so the lifted pixels follow its scale, rotation and flip. The offset is in
-    // layer-source pixels and is applied inside the transform, as in the marquee's `layerTransformAttr` and in
-    // `_commitMove`.
+    // the layer image's own pixels and is applied inside the transform, as in the marquee's `layerTransformAttr` and
+    // in `_commitMove`.
     const sx = (layer.scale || 1) * (layer.flipX ? -1 : 1);
     const sy = (layer.scale || 1) * (layer.flipY ? -1 : 1);
     ctx.save();
@@ -1307,7 +1312,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Commit a floating move into its layer, so the layer sources can be read. While a move floats, the lifted pixels
+   * Commit a floating move into its layer, so the layer images can be read. While a move floats, the lifted pixels
    * are erased from the layer and held apart, until the selection is dropped, another tool is used, or an operation
    * that reads the layer commits them. Character Studio and the import panel call this before they save, write the
    * workspace or an actor composition, or move art between tabs, or the floating pixels would be lost.
@@ -1366,8 +1371,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Convert a canvas cell to a layer-source pixel, sampling at the cell's centre. A corner sits exactly on a pixel
-   * boundary and can round to either side of it.
+   * Convert a canvas cell to a pixel of the layer image, sampling at the cell's centre. A corner sits exactly on a
+   * pixel boundary and can round to either side of it.
    * @param {object} layer                          The layer.
    * @param {number} cx                             Canvas x.
    * @param {number} cy                             Canvas y.
@@ -1590,7 +1595,8 @@ export class CanvasView {
    * The area handler ignores presses inside the mount, which the mount's own handler takes. Both go through
    * `_takeMiddleDoubleClick`, so a click on the canvas followed by one just off it still counts as a pair.
    *
-   * `destroy` removes every listener added here, or the element it was added to.
+   * `destroy` removes the window and canvas-area listeners, and the canvas element with its own listeners. The
+   * pointer and wheel listeners on the mount stay, and go when the studio discards the mount.
    * @private
    */
   _setupInteractions() {
@@ -1696,6 +1702,9 @@ export class CanvasView {
    * every left-drag into a layer move and the view could never be dragged. There the press is tested against the
    * selected layer's opaque pixels instead: grabbing them moves the layer, and grabbing the backdrop pans the camera
    * as the middle button does.
+   *
+   * Any mouse button that reaches here starts the drag. Unlike the pixel tools, the pan tool doesn't check for the
+   * left button.
    * @param {PointerEvent} e        The press.
    * @private
    */
@@ -1762,6 +1771,9 @@ export class CanvasView {
    * End the running gesture, release its pointer and let it finish what it was doing. Called on pointerup,
    * pointercancel and window blur, by `recentreView` for a camera pan, and by `destroy`. (`setTool` drops a tool drag
    * through `GestureState#end` directly, without finishing it.)
+   *
+   * The ending event's pointer isn't compared with the one that started the gesture, so on a touch screen a second
+   * finger lifting ends the first finger's drag.
    * @param {object} [opts]
    * @param {boolean} [opts.cancelled]      Whether the gesture was interrupted rather than released.
    * @param {number} [opts.pointerId]       The pointer of the event that ended it, for the release.
@@ -1783,7 +1795,7 @@ export class CanvasView {
   /**
    * Enter a gesture and take its pointer, so a drag that leaves the mount keeps reporting.
    * @param {string} name           The gesture, a GESTURE_* constant.
-   * @param {object} data           Its payload.
+   * @param {object} data           The data its handlers keep while it runs.
    * @param {PointerEvent} e        The press that opened it.
    * @returns {boolean}             Whether the gesture was entered.
    * @private
@@ -1813,7 +1825,7 @@ export class CanvasView {
   /**
    * Drag a layer, rotate it, or drag the whole visible stack, depending on how the gesture opened.
    * @param {PointerEvent} e        The move.
-   * @param {object} drag           The layer drag's payload.
+   * @param {object} drag           The layer drag's data.
    * @private
    */
   _dragLayer(e, drag) {
@@ -1827,6 +1839,8 @@ export class CanvasView {
     if (drag.mode === LAYER_DRAG.PAN) {
       changed = placeLayerAt(drag.layer, drag.startLayer.x + sx, drag.startLayer.y + sy);
     } else if (drag.mode === LAYER_DRAG.ROTATE) {
+      // Turn by half the angle of the drag direction from the press point. It isn't measured around the layer's
+      // pivot, and it jumps by half a turn when the drag crosses straight left.
       const angle = Math.atan2(sy, sx);
       drag.layer.rotation = drag.startLayer.rotation + angle * 0.5;
     } else if (drag.mode === LAYER_DRAG.PAN_ALL) {
@@ -1845,7 +1859,7 @@ export class CanvasView {
    * Record a finished layer drag, so Ctrl+Z undoes all of it in one step. The starting transform is only recorded
    * when the drag changed something, so a plain click adds no undo entry and doesn't mark the tab unsaved. A drag of
    * every visible layer records one entry covering all of them.
-   * @param {object} drag           The layer drag's payload.
+   * @param {object} drag           The layer drag's data.
    * @private
    */
   _finishLayerDrag(drag) {
@@ -2023,7 +2037,7 @@ export class CanvasView {
    * one element). The browser menu is always suppressed, so it never opens over the canvas mid-edit.
    *
    * On a spritesheet with a live selection, `onSelectionContextMenu` offers to copy the selection to another tab,
-   * since spritesheets are where parts are staged for other tabs. Otherwise the brush, line and fill tools pick up
+   * since a spritesheet is where parts are gathered for other tabs. Otherwise the brush, line and fill tools pick up
    * the colour under the cursor.
    * @param {MouseEvent} e          The press.
    * @private
@@ -2043,8 +2057,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Show the grabbing cursor while a layer drag is held. The stylesheet's `.ete-canvas:active` rule can't do it,
-   * because the pointerdown handler calls preventDefault, so the canvas never becomes `:active` during the drag.
+   * Show the grabbing cursor while a layer drag is held. The stylesheet's `.ete-canvas:active` rule isn't enough,
+   * because the mount holds the pointer capture during the drag, so the browser shows the mount's cursor.
    * @param {boolean} on            Whether a layer is currently grabbed.
    * @private
    */
@@ -2096,7 +2110,7 @@ export class CanvasView {
    * Move the view by the pointer's travel in screen pixels, so the camera follows the cursor one to one whatever the
    * zoom.
    * @param {PointerEvent} e        The move.
-   * @param {object} pan            The camera pan's payload.
+   * @param {object} pan            The camera pan's data.
    * @private
    */
   _dragViewPan(e, pan) {
@@ -2109,7 +2123,7 @@ export class CanvasView {
 
   /**
    * Put back the cursors the camera pan borrowed, which are whatever the active tool had set.
-   * @param {object} pan            The camera pan's payload.
+   * @param {object} pan            The camera pan's data.
    * @private
    */
   _finishViewPan(pan) {
@@ -2189,8 +2203,7 @@ export class CanvasView {
     // one undo step until a deselect, another tool, or an operation that reads the layer commits it.
     if (this.activeTool !== 'move') this._flushFloating();
     this._ensureLayerCoversWorkspace(sel);
-    // Wand and fill take canvas coordinates. Both commit a pending float first, and that commit can grow the layer
-    // to the workspace, so layer coordinates worked out before it would point into the old raster.
+    // Wand and fill take canvas coordinates and work out the layer pixel themselves.
     if (this.activeTool === 'wand') {
       this._wandSelect(sel, x, y, e.altKey ? 'add' : (e.ctrlKey ? 'subtract' : 'replace'));
       return;
@@ -2212,18 +2225,17 @@ export class CanvasView {
       return;
     }
     if (this.activeTool === 'brush') {
-      // A later commit of a floating selection would stamp over this paint, and the commit can grow the layer, so
-      // commit it before reading any layer coordinate.
+      // A later commit of a floating selection would stamp over this paint, so commit it first.
       this._flushFloating();
       const p = this._canvasCellToLayer(sel, x, y);
       const lx = Math.floor(p.x), ly = Math.floor(p.y);
-      // Check bounds and the selection before the undo snapshot, as _floodFill does, so a press the brush can't act
-      // on adds no undo entry and doesn't mark the tab unsaved.
+      // A press outside the layer or the selection paints nothing and takes no pixel undo entry. A layer smaller
+      // than the grid has already been grown above, which records its own entry.
       if (lx < 0 || ly < 0 || lx >= sel.width || ly >= sel.height) return;
       const bound = (this.selection && this.selection.layerId === sel.id) ? this.selection.mask : null;
       if (bound && !bound[ly * sel.width + lx]) return;
       this._capturePointer(e.pointerId);
-      // One snapshot of the whole layer per stroke, so Ctrl+Z undoes the whole drag at once.
+      // One undo entry of the whole layer per stroke, so Ctrl+Z undoes the whole drag at once.
       this.pushUndoSnapshot(sel);
       const editable = this._ensureEditableImage(sel);
       const ctx = editable.getContext('2d', READ_BACK);
@@ -2387,7 +2399,7 @@ export class CanvasView {
    * An interrupted drag (pointercancel, window blur, teardown) is undone instead. The line removes its rubber band,
    * and the move puts the pixels back where this press picked them up: where they were lifted from, or where an
    * earlier press left them floating.
-   * @param {object} st                     The tool drag's payload.
+   * @param {object} st                     The tool drag's data.
    * @param {boolean} cancelled             Whether the drag was interrupted rather than released.
    * @private
    */
@@ -2432,8 +2444,8 @@ export class CanvasView {
   /**
    * Turn a layer's image into a canvas the tools can write to, and return it. The image's type is checked rather
    * than the `_editable` flag, because imported layers also set that flag (so projects embed their pixels) while
-   * their image is still an image element. Editing makes any recolour cached from the source stale, so the cache is
-   * dropped.
+   * their image is still an image element. Converting an image element drops the layer's recolour cache and doesn't
+   * rebuild it: a palette-indexed layer draws its raw slot codes until `_rerecolourLayer` runs.
    * @param {object} layer                  The layer.
    * @returns {HTMLCanvasElement}
    * @private
@@ -2456,8 +2468,7 @@ export class CanvasView {
 
   /**
    * Select the connected region of pixels matching the clicked one, with the same modifiers as the rectangle tool.
-   * Any float is committed before the clicked pixel is found, because the commit can grow the layer to the
-   * workspace, and a pixel found earlier would point into the old raster.
+   * Any floating move is committed first (see `_flushFloating`).
    * @param {object} layer          The layer.
    * @param {number} cx             Canvas x.
    * @param {number} cy             Canvas y.
@@ -2514,8 +2525,7 @@ export class CanvasView {
    * @private
    */
   _floodFill(layer, cx, cy) {
-    // Commit first: the commit can grow the layer to the workspace, which moves every layer coordinate and resizes
-    // the raster this walks.
+    // Commit any floating move first (see `_flushFloating`).
     this._flushFloating();
     const p = this._canvasCellToLayer(layer, cx, cy);
     const lx = Math.floor(p.x), ly = Math.floor(p.y);
@@ -2759,8 +2769,8 @@ export class CanvasView {
   _eraseSelectionPixels(layer) {
     const editable = this._ensureEditableImage(layer);
     const ctx = editable.getContext('2d', READ_BACK);
-    // Read before the undo snapshot, so unreadable art is refused with no entry. The snapshot settles any open
-    // adjustment preview but leaves the pixels as read.
+    // Read before the undo entry is taken, so unreadable art is refused with no entry. Taking the entry keeps any
+    // open adjustment preview as its own undo step but leaves the pixels as read.
     let img;
     try { img = ctx.getImageData(0, 0, layer.width, layer.height); }
     catch (_) { return this._warnUnreadable(_); }
@@ -2972,7 +2982,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Snapshot a layer's transform, for moves and nudges that change no pixels.
+   * Record a layer's transform, for moves and nudges that change no pixels.
    * @param {object} layer          The layer.
    * @param {object} snap           The transform before the change.
    */
@@ -2990,7 +3000,7 @@ export class CanvasView {
 
   /* -------------------------------------------- */
 
-  /** A layer's current transform and visibility, in the shape a transform snapshot takes. */
+  /** A layer's current transform and visibility, in the shape a transform undo entry takes. */
   _transformOf(layer) {
     return {
       x: layer.x, y: layer.y,
@@ -3002,7 +3012,7 @@ export class CanvasView {
 
   /* -------------------------------------------- */
 
-  /** Snapshot one or more layers' palettes before a colour-tray edit or a broadcast. */
+  /** Record one or more layers' palettes before a colour panel edit or a broadcast. */
   pushPaletteSnapshot(layers) {
     const list = (Array.isArray(layers) ? layers : [layers]).filter(l => l?.isFecc && l._feccPalette);
     if (!list.length) return;
@@ -3014,7 +3024,7 @@ export class CanvasView {
 
   /* -------------------------------------------- */
 
-  /** Snapshot a layer's backing image and palette linkage before it is rasterised. */
+  /** Record a layer's image and palette link before it is rasterised. */
   pushLayerImageSnapshot(layer) {
     if (!layer) return;
     this._pushUndo(this._layerImageEntry(layer));
@@ -3022,7 +3032,7 @@ export class CanvasView {
 
   /* -------------------------------------------- */
 
-  /** The image-and-linkage fields a rasterise rewrites, captured for one layer. */
+  /** The image and palette-link fields a rasterise rewrites, recorded for one layer. */
   _layerImageEntry(layer) {
     return {
       kind: 'layer-image',
@@ -3087,7 +3097,7 @@ export class CanvasView {
 
   /**
    * Add an undo entry to `EditHistory`. Every recorded edit in this class goes through here, so an open adjustment
-   * preview is settled here first and its entry lands ahead of the new one.
+   * preview is turned into its own undo entry here first, ahead of the new one.
    * @param {object} entry          The undo entry.
    * @private
    */
@@ -3099,13 +3109,13 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Restore the most recent snapshot and put the current state on the redo stack.
+   * Restore the most recent undo entry and put the current state on the redo stack.
    */
   undo() {
     // Commit a floating move first, or the restore would lose the lifted pixels: the pixel branch drops `_floating`
-    // when the snapshot names its layer, and the layers-state branch always drops it. Once committed they are
+    // when the entry names its layer, and the layers-state branch always drops it. Once committed they are
     // ordinary layer pixels, which the restore either rewinds (with a redo entry to bring them back) or leaves alone.
-    // An adjustment preview is kept the same way, so the next slider move can't write its baseline over the undo.
+    // An open adjustment preview is kept the same way.
     this._settleAdjustSession();
     this._flushFloating();
     const snap = this._history.takeUndo();
@@ -3120,7 +3130,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Reapply the most recently undone snapshot.
+   * Reapply the most recently undone entry.
    */
   redo() {
     this._settleAdjustSession();
@@ -3137,13 +3147,14 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Apply one snapshot and record the state it replaces on the opposite stack. `undo` and `redo` drop an entry
-   * whose layer has since been deleted. Layer-list entries need no such check, since they restore the whole list.
+   * Apply one undo or redo entry and record the state it replaces on the opposite stack. `undo` and `redo` drop
+   * an entry whose layer has since been deleted. Layer-list entries need no such check, since they restore the whole
+   * list.
    *
    * Restoring a layer's pixels or image drops a selection on that layer, since it may no longer match the pixels
    * (after the layer was grown to the workspace, for example). Keeping it would leave the user moving a region that
    * isn't there.
-   * @param {object} snap                   The snapshot.
+   * @param {object} snap                   The entry.
    * @param {string} direction              Which way it was taken, so the state it displaces goes the other way.
    * @private
    */
@@ -3168,7 +3179,7 @@ export class CanvasView {
 
     if (snap.kind === 'transform-multi') {
       // A move of every visible layer (Alt). Record the current state of each layer that still exists for the
-      // opposite stack, then restore the snapshot.
+      // opposite stack, then restore the entry.
       const live = snap.entries.filter(en => this.layers.some(l => l.id === en.layerId));
       if (!live.length) return;
       this._history.recordOpposite(direction, {
@@ -3262,7 +3273,7 @@ export class CanvasView {
       notify.failure('_applySnapshot failed', _);
       return;
     }
-    // The opposite entry records the size of the pixels it holds, not the size of the snapshot being restored.
+    // The opposite entry records the size of the pixels it holds, not the size of the entry being restored.
     // They differ when the edit being undone grew the layer, and a mismatched size would make the ImageData
     // constructor throw on the way back.
     this._history.recordOpposite(direction, {
@@ -3274,7 +3285,7 @@ export class CanvasView {
     });
     const restored = new ImageData(new Uint8ClampedArray(snap.data), snap.w, snap.h);
     if (snap.w !== curW || snap.h !== curH) {
-      // Rebuild the layer's canvas at the snapshot's size and put the pixels back.
+      // Rebuild the layer's canvas at the entry's size and put the pixels back.
       const c = document.createElement('canvas');
       c.width = snap.w; c.height = snap.h;
       c.getContext('2d', READ_BACK).putImageData(restored, 0, 0);
@@ -3999,8 +4010,8 @@ export class CanvasView {
     const ectx = editable.getContext('2d', READ_BACK);
     ectx.imageSmoothingEnabled = false;
     // sourceCanvas has the layer's size from before any expansion, since the pixels were lifted first. Its pixel
-    // (sx, sy) is at (sx + frameOffset.x, sy + frameOffset.y) in the grown layer, and the drag offset is in
-    // layer-source pixels, so both are added.
+    // (sx, sy) is at (sx + frameOffset.x, sy + frameOffset.y) in the grown layer, and the drag offset is in the
+    // layer image's own pixels, so both are added.
     ectx.drawImage(sourceCanvas, frameOffset.x + offsetX, frameOffset.y + offsetY);
 
     // Move the selection mask to where the pixels landed. originalMask is already in the grown layer's frame, so
@@ -4052,7 +4063,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Grow a layer to the full grid if a move would otherwise push pixels outside it.
+   * Grow a layer smaller than the grid to the full grid, with an undo entry, so the pixel tools can reach every
+   * cell. Every pixel-tool press calls it, the selection tools included. It does nothing while a move is floating.
    * @param {object} layer          The layer.
    * @private
    */
@@ -4069,6 +4081,9 @@ export class CanvasView {
    * Redraw a layer onto a canvas the size of the full grid, keeping its content where it appears on screen. The
    * offset is worked out in layer space (`expandOrigin` in selection-geometry.mjs), since the layer's own transform
    * sits between layer and canvas space, and a canvas-space offset would be distorted by it.
+   *
+   * The recolour cache is dropped and not rebuilt here. A palette-indexed layer needs `_rerecolourLayer` afterwards,
+   * or it draws its raw slot codes.
    * @param {object} layer          The layer.
    * @private
    */
@@ -4076,7 +4091,7 @@ export class CanvasView {
     const newW = this.size, newH = this.size;
     const oldW = layer.width, oldH = layer.height;
     if (oldW >= newW && oldH >= newH) return;
-    // A preview's baseline has the old size, so it can only be kept before the raster grows.
+    // An open adjustment preview holds a copy of the pixels at the old size, so keep it before the layer grows.
     this._settleAdjustSession();
 
     // Where the old content's top-left corner lands in the new layer, so the layer stays where it was on screen.
@@ -4141,7 +4156,7 @@ export class CanvasView {
 
   /**
    * Call `onSelectionMaskChange`. The reason tells a selection-only change from one that also rewrote pixels, which
-   * the colour panel needs: the first only repaints, and the second makes its pixel snapshot stale.
+   * the colour panel needs: the first only repaints, and the second makes its stored copy of the pixels stale.
    * @param {string} [reason]       'select' or 'pixels'.
    * @private
    */
@@ -4213,9 +4228,9 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Start an adjustment session for Sprite Studio's adjust tray, keeping the current pixels as the baseline. Every
-   * preview starts again from the baseline rather than from the previous preview, so dragging a slider back and
-   * forth can't stack the adjustment or degrade the image.
+   * Start an adjustment for Sprite Studio's adjust panel, keeping a copy of the current pixels. Every preview starts
+   * again from that copy rather than from the previous preview, so dragging a slider back and forth can't stack the
+   * adjustment or degrade the image.
    * @returns {boolean}             Whether a session could be started.
    */
   beginSelectionAdjust() {
@@ -4237,7 +4252,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Re-apply the adjustment from the baseline and show the result.
+   * Re-apply the adjustment to the starting pixels and show the result.
    * @param {object} params         Hue, saturation, brightness and contrast.
    */
   previewSelectionAdjust(params) {
@@ -4256,8 +4271,9 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Keep the preview as one undoable edit. The baseline is written back before the undo snapshot and the adjusted
-   * pixels restored after it, so one undo returns to the pixels from before the adjustment, not to a preview.
+   * Keep the preview as one undoable edit. The starting pixels are written back before the undo entry is taken and
+   * the adjusted pixels restored after it, so one undo returns to the pixels from before the adjustment, not to a
+   * preview.
    * @returns {boolean}             Whether anything was committed.
    */
   commitSelectionAdjust() {
@@ -4286,9 +4302,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Keep an open preview as the layer's pixels before any other edit, undo or redo, so the edit applies on top of
-   * what the user sees. A later revert would otherwise put the baseline back over that edit while its undo entry
-   * stayed. A preview that changed nothing ends the session without an entry.
+   * Turn an open adjust preview into a normal undo step before another edit, undo or redo, so that edit applies on
+   * top of what the user sees. A preview that changed nothing ends the adjustment without an entry.
    * @private
    */
   _settleAdjustSession() {
@@ -4309,7 +4324,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Discard the preview, restoring the baseline pixels.
+   * Discard the preview, restoring the starting pixels.
    */
   revertSelectionAdjust() {
     const s = this._adjustSession;
@@ -4414,7 +4429,7 @@ export class CanvasView {
    *
    * `layerTransformAttr` builds the group's transform the way the layer itself is drawn, flip included, so a
    * selection on a flipped layer wraps the mirrored pixels the user sees. A floating move's offset is applied inside
-   * it, in layer-source pixels. The drag rectangle is drawn outside that group, in plain canvas cells.
+   * it, in the layer image's own pixels. The drag rectangle is drawn outside that group, in plain canvas cells.
    * @private
    */
   _drawSelectionOverlay() {
@@ -4636,12 +4651,12 @@ export class CanvasView {
     const disp = this._previewOn ? '' : 'none';
     this.projCanvas.style.display = disp;
     if (this.projControl) this.projControl.style.display = disp;
-    // The projection only copies the canvas while it is shown. The next copy is forced either way, so a preview
-    // switched back on never shows the frame it was hidden with.
+    // The preview canvas only copies the working canvas while it is shown. The next copy is forced either way, so a
+    // preview switched back on never shows the frame it was hidden with.
     this._projRevision = null;
     if (this._previewOn) this._projection.start();
     else this._projection.stop();
-    // Dim the 1:1 working canvas while previewing, so the projection at its real on-map size stands out.
+    // Dim the 1:1 working canvas while previewing, so the preview at its real on-map size stands out.
     this.canvas.style.opacity = this._previewOn ? '0.18' : '';
     this._applyProjectionScale();
     return this._previewOn;
@@ -4650,8 +4665,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Build the token-side scale preview: a projection canvas that shows the art at its on-map size, its scale
-   * readout, the zoom badge, and the ProjectionLoop that keeps the projection copied from the working canvas.
+   * Build the token-side scale preview: a preview canvas that shows the art at its on-map size, its scale readout,
+   * the zoom badge, and the ProjectionLoop that keeps the preview canvas copied from the working canvas.
    * @param {number} initial        Starting scale.
    * @private
    */
@@ -4688,7 +4703,7 @@ export class CanvasView {
     this.zoomBadge = badge;
     this._updateZoomBadge();
 
-    // The loop copies the working canvas onto the projection each frame, but only while the preview is shown:
+    // The loop copies the working canvas onto the preview canvas each frame, but only while the preview is shown:
     // `setPreview` starts and stops it and `destroy` releases it. A copy only happens after a new draw, so an idle
     // preview costs one comparison per frame.
     this._projection = new ProjectionLoop({ sync: () => this._syncProjection(proj) });
@@ -4698,8 +4713,8 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Mirror the working canvas onto the projection when a draw has happened since the last copy.
-   * @param {HTMLCanvasElement} proj  The projection canvas.
+   * Mirror the working canvas onto the preview canvas when a draw has happened since the last copy.
+   * @param {HTMLCanvasElement} proj  The preview canvas.
    * @returns {boolean} Whether a copy was made.
    */
   _syncProjection(proj) {
@@ -4713,16 +4728,16 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Redraw the projection at the current scale.
+   * Redraw the token preview at the current scale.
    * @private
    */
   _applyProjectionScale() {
     if (!this.projCanvas) return; // the avatar side has no projection
     // `_projScale` is the Actor Control Panel's token scale. The on-map size is that times the base magnification.
     const visual = this._projScale * TOKEN_BASE_MAGNIFICATION;
-    // Preview the variant's vertical render offset by lifting the projection `_projOffsetY` grid cells. The lift
+    // Preview the variant's vertical render offset by lifting the preview canvas `_projOffsetY` grid cells. The lift
     // comes before the token scale in the transform, so it is a shift that doesn't grow with the scale, as the real
-    // token mesh offset behaves. The percentage is of the cell-sized projection canvas.
+    // token mesh offset behaves. The percentage is of the cell-sized preview canvas.
     const off = this._projOffsetY;
     const lift = off !== 0 ? `translateY(${(-off * 100).toFixed(3)}%) ` : '';
     // Follow the working canvas's pan and zoom, so the preview stays on the art it represents. The pan and zoom come
@@ -4736,7 +4751,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Set the projection's vertical offset, matching the variant's render offset.
+   * Set the token preview's vertical offset, matching the variant's render offset.
    * @param {number} value          Offset in grid units.
    */
   setProjectionOffsetY(value) {
@@ -4748,7 +4763,7 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Set the projection's scale.
+   * Set the token preview's scale.
    * @param {number} value          The scale.
    */
   setProjectionScale(value) {
@@ -4828,11 +4843,11 @@ export class CanvasView {
   /* -------------------------------------------- */
 
   /**
-   * Tear the view down, undoing everything it started, subscribed to or appended. A view is destroyed when its tab
-   * closes, and the studio removes the tab's markup right after, so nothing should keep running for it. In order:
-   * the running gesture is cancelled (releasing its pointer capture), the window and area listeners are removed, the
-   * resize observer is disconnected, the projection loop is released, the open run of nudges is dropped without an
-   * undo entry, and the elements this view appended to the mount are removed.
+   * Tear the view down. A view is destroyed when its tab closes, and the studio removes the tab's markup right after,
+   * so nothing should keep running for it. In order: the running gesture is cancelled (releasing its pointer
+   * capture), the window and area listeners are removed, the resize observer is disconnected, the token preview loop
+   * is released, the open run of nudges is dropped without an undo entry, and the elements this view appended to the
+   * mount are removed. The mount's own pointer and wheel listeners are left to go with the mount.
    *
    * Pending edits are not committed here. Callers that need the pixels (every save path) call `commitPendingEdits`
    * first, and committing into layers this method is about to drop would save nothing.
@@ -4874,7 +4889,7 @@ export class CanvasView {
 
   /**
    * Remove every element this view appended to the mount, and drop the references to them: the canvas, the guides,
-   * the marquee, the brush preview, the tone highlight, the projection and its two readouts. The mount itself
+   * the marquee, the brush preview, the tone highlight, the token preview canvas and its two readouts. The mount itself
    * belongs to the studio's markup and is left alone.
    * @private
    */

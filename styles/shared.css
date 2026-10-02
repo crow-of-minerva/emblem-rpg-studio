@@ -159,12 +159,9 @@
 }
 
 /* ---------- No focus state ----------
- * Keyboard focus behaviour is retained, nothing is drawn for it. Core paints an
- * outline AND a shadow (`button:focus` carries both, `button:hover` carries the
- * shadow alone), so both are revoked on everything that can take focus and the
- * few controls whose resting chip shadow is part of their shape re-assert it.
- * Scoped to focusable elements rather than `:focus-within`, so a focused child
- * can never blank the shadow of the panel around it. */
+ * Studio draws no focus ring. Core's `button:focus` adds an outline and a
+ * shadow (`button:hover` a shadow), so both are removed from every focusable
+ * control, and the chip buttons below put their resting shadow back. */
 .emblem-rpg-studio button:focus,
 .emblem-rpg-studio button:focus-visible,
 .emblem-rpg-studio button:hover,
@@ -197,7 +194,7 @@
   box-shadow: var(--sts-chip-fx) !important;
 }
 
-/* The instrument strips are flat glyphs: colour is their only state channel. */
+/* Toolbar icon buttons show state by colour only: no background or shadow. */
 .emblem-rpg-studio .ete-toolbar .acp-btn:focus,
 .emblem-rpg-studio .ete-toolbar .acp-btn:hover,
 .emblem-rpg-studio .ete-footer .acp-btn:focus,

@@ -321,7 +321,7 @@ function antialiasAxisModel(data, w, h, axis) {
  * Detect the native resolution of an antialiased up-scale: the cell counts, grid origins and up-scale models of the
  * coarsest square-pixel grid whose least-squares cells re-render the source.
  *
- * When no grid of its own holds up but the caller already has one, that grid is settled instead: its offsets and
+ * When no grid of its own holds up but the caller already has one, that grid is used instead: its offsets and
  * up-scale models are fitted so a smoothed source the edge fold happened to size correctly is still recovered
  * properly. Otherwise it returns zero counts, as pixelArtDetectNativeAxes does.
  * @param {Uint8ClampedArray} data        Source pixels.

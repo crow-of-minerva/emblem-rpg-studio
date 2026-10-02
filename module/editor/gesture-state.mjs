@@ -1,7 +1,7 @@
 /** @layer editor */
 
 /* -------------------------------------------- */
-/*  Gesture Vocabulary                          */
+/*  Gesture Names                               */
 /* -------------------------------------------- */
 
 /** No pointer gesture is running. */
@@ -48,13 +48,13 @@ const GESTURE_TRANSITIONS = Object.freeze({
 });
 
 /* -------------------------------------------- */
-/*  The Machine                                 */
+/*  Gesture State                               */
 /* -------------------------------------------- */
 
 /**
- * Which pointer gesture a canvas is in, which pointer started it, and that gesture's payload. Each CanvasView
+ * Which pointer gesture a canvas is in, which pointer started it, and the data stored with it. Each CanvasView
  * (canvas-view.mjs) owns one, and its pointer down, move and up handlers all read it to decide which drag is running.
- * The payload is whatever the gesture's handlers stored at press time (the grabbed layer and its starting transform,
+ * The data is whatever the gesture's handlers stored at press time (the grabbed layer and its starting transform,
  * the camera's starting pan, or the tool's stroke state). This class never reads inside it.
  *
  * Nothing here touches the DOM. CanvasView handles pointer capture, cursors and listeners around `begin` and `end`.
@@ -89,19 +89,19 @@ export class GestureState {
   get idle() { return this._name === GESTURE_IDLE; }
 
   /**
-   * The layer drag's payload, or null when some other gesture (or none) is running.
+   * The layer drag's data, or null when some other gesture (or none) is running.
    * @type {object|null}
    */
   get layerDrag() { return this._name === GESTURE_LAYER_DRAG ? this._data : null; }
 
   /**
-   * The camera pan's payload, or null when some other gesture (or none) is running.
+   * The camera pan's data, or null when some other gesture (or none) is running.
    * @type {object|null}
    */
   get viewPan() { return this._name === GESTURE_VIEW_PAN ? this._data : null; }
 
   /**
-   * The tool drag's payload, or null when some other gesture (or none) is running.
+   * The tool drag's data, or null when some other gesture (or none) is running.
    * @type {object|null}
    */
   get toolDrag() { return this._name === GESTURE_TOOL_DRAG ? this._data : null; }
@@ -113,9 +113,9 @@ export class GestureState {
   /**
    * Enter a gesture, which is only allowed from idle. A press during another gesture (a middle-click during a brush
    * stroke, a second touch) is refused without a message, because accepting it would replace the running gesture's
-   * payload while its pointer capture and listeners still belong to the first press.
+   * data while its pointer capture and listeners still belong to the first press.
    * @param {string} name                   The gesture to enter, a GESTURE_* constant.
-   * @param {object} data                   That gesture's payload.
+   * @param {object} data                   The data the gesture's handlers keep while it runs.
    * @param {number|null} [pointerId]       The pointer that opened it, for the release on the way out.
    * @returns {boolean}                     Whether the gesture was entered.
    */

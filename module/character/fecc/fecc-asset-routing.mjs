@@ -83,7 +83,8 @@ function stripTrail(base) {
 /**
  * The token tray a normalised name belongs to. A trailing suffix decides if there is one. Otherwise the words are
  * checked from the end, so a name with several tray words files under the last one, and an "idle" word beats any
- * tray word before it. A name with no tray word is idle.
+ * tray word before it. A name with no tray word is idle. The suffix test looks only at the last characters, not a
+ * whole word, so "outcast" ends in "cast" and files as an attack.
  */
 function categoryFor(base) {
   const stripped = stripTrail(base);

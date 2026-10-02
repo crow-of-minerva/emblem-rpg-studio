@@ -100,9 +100,10 @@ let _saved = null;
 /* -------------------------------------------- */
 
 /**
- * Take over the canvas for a region selection. The overlay's hit area is the whole scene rectangle, so every pointer
- * event inside the map reaches the tool rather than the layers underneath. The `canvasTearDown` hook ends the tool,
- * since a scene change would otherwise leave the overlay on a stage that no longer exists.
+ * Take over the canvas for a region selection. The overlay's hit area is the whole canvas rectangle, the scene's
+ * padding included, so every pointer event on the map reaches the tool rather than the layers underneath. The
+ * `canvasTearDown` hook ends the tool, since a scene change would otherwise leave the overlay on a stage that no
+ * longer exists.
  * @param {object} [options]
  * @param {Function|null} [options.onEnd]         Called with the saved path, or null, when the tool ends.
  * @returns {boolean}                             False if it could not start.
@@ -491,7 +492,7 @@ function _shapeColor(op) {
 
 /**
  * Build the selection overlay, reduced to a workable resolution and scaled back up over the scene.
- * @param {object} rect           The scene rectangle.
+ * @param {object} rect           The canvas rectangle, padding included.
  */
 function _createViz(rect) {
   _vizScale = Math.min(1, VIZ_MAX_DIM / Math.max(rect.width, rect.height));
@@ -577,8 +578,8 @@ function _drawPreview() {
 /* -------------------------------------------- */
 
 /**
- * The bounding box of the adding shapes, clamped to the scene, since a lasso can be dragged past the map edge and a
- * capture outside the scene rectangle would leave empty margins in the cut.
+ * The bounding box of the adding shapes, clamped to the canvas rectangle (`canvas.dimensions.rect`), which includes
+ * the scene's padding. A lasso dragged into the padding still gives the cut transparent margins.
  * @param {object[]} adds         The additive shapes.
  * @returns {object|null}
  */
@@ -620,6 +621,10 @@ function _selectionBounds(adds) {
  * Each mesh is drawn through its own transform, allowing for its anchor, since the primary group's children are
  * positioned by anchor rather than by corner. A mesh whose texture can't be drawn is reported and skipped, and the
  * capture goes on.
+ *
+ * Every visible art mesh is drawn at its own alpha. In a multi-level scene that includes the background and
+ * foreground textures of other visible levels, without their tint, and hidden tiles are drawn at the faded alpha the
+ * GM sees.
  * @param {object} bounds                 Region to capture.
  * @returns {HTMLCanvasElement}
  */
@@ -756,7 +761,7 @@ function _openBar(label, onConfirm, onCancel) {
 /**
  * Run one cut from start to finish: take over the canvas, show the controls, and resolve with what was saved. Called
  * by `openSceneCrop` (api.mjs). A refused confirm ends nothing, since the selection can be fixed. The promise only
- * settles when the tool tears down, after a save, a cancel or a scene change.
+ * resolves when the tool tears down, after a save, a cancel or a scene change.
  * @param {object} options
  * @param {string} options.filename               Destination filename.
  * @param {string} [options.label]                What is being cut, for the control bar.
