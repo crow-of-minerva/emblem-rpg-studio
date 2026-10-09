@@ -1,7 +1,6 @@
-/** @layer utils */
 /*
- * Rebuilding native pixel art from an up-scaled, rasterised image. CanvasView._analysePixelArt
- * (editor/canvas-view.mjs) runs these steps, and does steps 5 and 6 itself with the helpers here:
+ * Rebuilding native pixel art from an up-scaled, rasterised image. analysePixelArt (editor/pixel-art-import.mjs)
+ * runs these steps, and does steps 5 and 6 itself with the helpers here:
  *   1. Detect the native resolution from how regularly the image's edges repeat. This works for non-integer
  *      up-scale factors too: a 64x64 sprite at 1200x1200 is 18.75 pixels per cell, so blocks alternate 18 and 19
  *      pixels and the grid drifts, but folding the edge gradient at fractional periods still locks on.
@@ -24,13 +23,10 @@
  * The analysis works on raw ImageData arrays. Only `pixelArtCropTransparent` touches the DOM.
  */
 
+import { READ_BACK } from './image.mjs';
+
 /* -------------------------------------------- */
 /*  Tuning                                      */
-/* -------------------------------------------- */
-
-/** Context options for the canvases whose pixels are read back. */
-const READ_BACK = { willReadFrequently: true };
-
 /* -------------------------------------------- */
 
 /** Beyond this many distinct tones the source isn't pixel art, and no palette is built. */
@@ -115,7 +111,7 @@ function pixelArtRgbKey(r, g, b) { return (r << 16) | (g << 8) | b; }
 /* -------------------------------------------- */
 
 /**
- * Read one scan line as premultiplied RGBA. pixel-art-antialias.mjs reads its lines through this too.
+ * Read one scan line as premultiplied RGBA.
  *
  * Premultiplied because fully transparent pixels carry arbitrary colour in most sprite sheets, and reading it raw
  * invents edges, and whole phantom grids, across empty margins.
@@ -202,14 +198,9 @@ function pixelArtFoldScore(sig, len, N) {
 /* -------------------------------------------- */
 
 /**
- * The grid-boundary offset for an N-cell fold, signed and folded into half a period either way.
- *
- * Phase is circular, and that matters. A boundary landing slightly before its nominal position folds to nearly a
- * full period, and used unfolded that offset shifts the whole resample a cell to the right, so every reconstructed
- * pixel would come from its neighbour's block.
- *
- * The peak bin is refined by its neighbours' weights, since a short period leaves too few bins to resolve the
- * offset on its own.
+ * The grid-boundary offset for an N-cell fold, signed and folded into half a period either way, since a boundary just
+ * before its nominal place would otherwise shift the resample a whole cell. The peak bin is refined by its neighbours'
+ * weights, because a short period has too few bins.
  * @param {Float64Array} sig      The gradient signal.
  * @param {number} len            Its length.
  * @param {number} N              Cell count.
@@ -234,13 +225,9 @@ function pixelArtFoldPhase(sig, len, N) {
 /* -------------------------------------------- */
 
 /**
- * How flat the cells of an N-cell grid are, plus the spread between them.
- *
- * This separates the true grid from a multiple of it. A grid matching the up-scale has flat cells, while one too
- * coarse straddles a native pixel boundary and picks up two colours.
- *
- * Only the middle of each cell is measured, so a soft boundary doesn't count against a grid that is right. The
- * window always spans the cell's midpoint, which is where a grid twice too coarse has its extra boundary.
+ * How flat the cells of an N-cell grid are, plus the spread between them, which tells the true grid from a coarser
+ * one that straddles native pixels. Only the middle of each cell is measured, a window spanning the midpoint where a
+ * grid twice too coarse has its extra boundary.
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.
@@ -294,17 +281,9 @@ function pixelArtBlockResidual(data, w, h, N, phase, axis) {
 /* -------------------------------------------- */
 
 /**
- * Everything one axis knows about its own grid.
- *
- * Returns the cell counts whose fold explains its edges and whose cells come out flat, the flatness bar they had to
- * clear, and a cached probe for any other count the other axis wants to try.
- *
- * Every multiple of the true grid folds as well as the true grid does, so the peak can land on a multiple. The true
- * count is then a divisor of a candidate, not a neighbour of the peak, so divisors are added as candidates and
- * flatness throws out the ones that are too coarse.
- *
- * An axis with no periodic grid of its own still runs probes, against the fixed bar, so a sprite that is all
- * horizontal bands can still take its row count from its column count.
+ * One axis's grid candidates: the cell counts whose fold explains its edges and whose cells come out flat, with their
+ * divisors since a multiple folds as well as the true grid, the flatness bar, and a cached probe for counts the other
+ * axis wants to try. An axis with no grid of its own still probes, so bands can take their count from the other axis.
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.
@@ -358,16 +337,9 @@ function pixelArtAxisModel(data, w, h, sig, len, axis) {
 /* -------------------------------------------- */
 
 /**
- * Detect the native resolution: the cell counts and grid origins of the coarsest square-pixel grid whose cells are
- * flat on both axes. CanvasView._analysePixelArt calls it first, before trying pixel-art-antialias.mjs.
- *
- * Coarsest first, because a finer grid explains the edges just as well but splits every true pixel into duplicate
- * cells.
- *
- * The axes are paired by a shared cell size instead of chosen independently, since up-scaling keeps pixels square.
- * Choosing them separately would let one axis collapse onto a coarser grid than the other and squash the sprite.
- *
- * Returns zero counts when no grid holds up.
+ * Detect the native resolution: the coarsest grid whose cells are flat on both axes, since a finer one splits each
+ * pixel. The axes share one cell size, because up-scaling keeps pixels square, and the counts are zero when no grid
+ * holds up.
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.
@@ -396,15 +368,9 @@ export function pixelArtDetectNativeAxes(data, w, h) {
 /* -------------------------------------------- */
 
 /**
- * Resample to a native grid, one pixel per cell.
- *
- * Each native pixel is the per-channel median of the central half of its up-scaled block. Centres are the cleanest
- * sample, and the median rejects compression noise without blending neighbours the way a mean would.
- *
- * The phases shift the grid onto the true block boundaries. Without them, a grid that doesn't start at the origin
- * has every cell straddle a boundary, and the edges blend into a melted look.
- *
- * A mostly-transparent cell stays empty rather than taking a colour from its few opaque pixels.
+ * Resample to a native grid, each pixel the per-channel median of the central half of its block, which rejects
+ * compression noise without blending neighbours. The phases put the grid on the true block boundaries, and a
+ * mostly-transparent cell stays empty.
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.
@@ -535,12 +501,8 @@ export function pixelArtQuantizeCells(cells, pal) {
 /* -------------------------------------------- */
 
 /**
- * Crop a canvas to its opaque bounding box, or return it unchanged when it is fully transparent.
- *
- * The only function here that touches the DOM. Everything above it is arithmetic on pixel arrays.
- *
- * Analysis counts only solid pixels, while a saved image passes a lower threshold so soft shadows and anti-aliased
- * rims outside the solid pixels are kept.
+ * Crop a canvas to the bounding box of pixels at or above `minAlpha`, or return it unchanged when there are none. A
+ * saved image passes a lower threshold than analysis, so soft shadows and anti-aliased rims are kept.
  * @param {HTMLCanvasElement} canvas      Canvas to crop.
  * @param {number} [minAlpha]             Alpha at or above which a pixel is kept inside the crop.
  * @returns {HTMLCanvasElement}

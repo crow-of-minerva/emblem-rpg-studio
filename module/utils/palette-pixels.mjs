@@ -1,9 +1,8 @@
-/** @layer utils */
 /*
  * The palette codes in FECC (Fire Emblem Character Creator) sprites, which store the palette shade each pixel takes
- * in its red channel. This file maps red codes to shades per layer type, says which shades each layer type uses, and
- * recolours pixel data. The colour panel, the parts library, the importer, fecc-recolour.mjs and CanvasView read it.
- * It has no DOM access.
+ * in its red channel. This file maps red codes to shades per layer type, says which shades each layer type uses, builds
+ * shade ramps and the default palette, and recolours pixel data. It has no DOM access, so Character Studio's model can
+ * use it.
  *
  * Exact codes: each shade is identified by the exact red byte of the pixel, with green and blue zero, and the
  * recolour lookup is indexed by that byte, not by red / 10. Every palette except Skin is a five-stop ramp: lighter,
@@ -107,6 +106,84 @@ export function derivedMidShade(block, shade) {
 }
 
 /* -------------------------------------------- */
+/*  Shade Ramps and the Default Palette         */
+/* -------------------------------------------- */
+
+/**
+ * Move a colour toward white by a fraction of the distance. A fraction rather than a fixed amount keeps a ramp's
+ * character at any brightness: a dark base lightens noticeably while a near-white one barely moves.
+ * @param {object} rgb            Colour.
+ * @param {number} [k]            How far toward white, from 0 to 1.
+ * @returns {object}
+ */
+function brighter({ r, g, b }, k = 0.18) {
+  return {
+    r: Math.min(255, Math.round(r + (255 - r) * k)),
+    g: Math.min(255, Math.round(g + (255 - g) * k)),
+    b: Math.min(255, Math.round(b + (255 - b) * k))
+  };
+}
+
+/**
+ * Move a colour toward black by a fraction of its own value.
+ * @param {object} rgb            Colour.
+ * @param {number} [k]            How far toward black, from 0 to 1.
+ * @returns {object}
+ */
+function darker({ r, g, b }, k = 0.18) {
+  return {
+    r: Math.max(0, Math.round(r * (1 - k))),
+    g: Math.max(0, Math.round(g * (1 - k))),
+    b: Math.max(0, Math.round(b * (1 - k)))
+  };
+}
+
+/** Parse a six-digit hex colour, or black when the text is not one. */
+export function hexToRgbOrBlack(hex) {
+  return parseHex(hex) ?? { r: 0, g: 0, b: 0 };
+}
+
+/**
+ * Build a palette block from one base colour. It has every shade key either ramp uses (the five-stop ramp and skin's
+ * extra darker stops), so one block works for any palette. It also keeps `base`, which the derived-shade fallbacks
+ * read when a block has no neutral.
+ * @param {string} baseHex        Base colour.
+ * @returns {object}
+ */
+export function shadeBlock(baseHex) {
+  const base = hexToRgbOrBlack(baseHex);
+  return {
+    base,
+    lighter:              brighter(base, 0.18),
+    light_mid:            brighter(base, 0.09),
+    neutral:              { ...base },
+    dark_mid:             darker(base, 0.09),
+    darker:               darker(base, 0.18),
+    darker_darker:        darker(base, 0.34),
+    darker_darker_darker: darker(base, 0.48)
+  };
+}
+
+/**
+ * The starting palette: each new tab's per-side palettes (createTab in character/model/tab-model.mjs), and the base
+ * of an imported asset's palette when no other is given (paletteFromColourMap).
+ * @returns {object}
+ */
+export function defaultPalette() {
+  return {
+    outline:   '#382040',
+    hair:      shadeBlock('#e0d840'),
+    eye:       shadeBlock('#403219'),
+    skin:      shadeBlock('#f8f8c0'),
+    metal:     shadeBlock('#646464'),
+    trim:      shadeBlock('#f7ad52'),
+    cloth:     shadeBlock('#525273'),
+    leather:   shadeBlock('#946442'),
+    accessory: shadeBlock('#000000')
+  };
+}
+
+/* -------------------------------------------- */
 /*  Code Tables                                 */
 /* -------------------------------------------- */
 
@@ -139,31 +216,32 @@ const CODE_TO_SHADE_OTHER = {
   // Cloth (Palette 6)
   150: 'cloth.lighter', 155: 'cloth.light_mid', 160: 'cloth.neutral', 165: 'cloth.dark_mid', 170: 'cloth.darker',
   // Leather (Palette 7)
-  180: 'leather.lighter', 185: 'leather.light_mid', 190: 'leather.neutral', 195: 'leather.dark_mid', 200: 'leather.darker',
+  180: 'leather.lighter', 185: 'leather.light_mid', 190: 'leather.neutral', 195: 'leather.dark_mid',
+  200: 'leather.darker',
   // Eye, Wild Card 1 (Palette 2): 210 and 220 keep their older meaning, lighter and darker
   210: 'eye.lighter', 213: 'eye.light_mid', 215: 'eye.neutral', 217: 'eye.dark_mid', 220: 'eye.darker',
   // Accessory, Wild Card 2 (Palette 8): 230 and 240 keep their older meaning, lighter and darker
-  230: 'accessory.lighter', 233: 'accessory.light_mid', 235: 'accessory.neutral', 237: 'accessory.dark_mid', 240: 'accessory.darker'
+  230: 'accessory.lighter', 233: 'accessory.light_mid', 235: 'accessory.neutral', 237: 'accessory.dark_mid',
+  240: 'accessory.darker'
 };
 
 /* -------------------------------------------- */
 
 /**
- * Red byte to palette shade, for face and accessory layers.
- *
- * The same codes mean different palettes here. The hair codes drive the eye palette and the metal codes drive the
- * accessory palette, so one face sprite can carry both without codes of its own. The wild-card range does nothing
- * on these layers.
+ * Red byte to palette shade, for face and accessory layers, where the hair codes drive the eye palette and the metal
+ * codes the accessory palette. The wild-card range does nothing on these layers.
  * @type {Object<number, string>}
  */
 const CODE_TO_SHADE_FACE = {
   0: 'outline',
   10: 'eye.lighter', 15: 'eye.light_mid', 20: 'eye.neutral', 25: 'eye.dark_mid', 30: 'eye.darker',
   40: 'skin.lighter', 50: 'skin.neutral', 60: 'skin.darker', 70: 'skin.darker_darker', 80: 'skin.darker_darker_darker',
-  90: 'accessory.lighter', 95: 'accessory.light_mid', 100: 'accessory.neutral', 105: 'accessory.dark_mid', 110: 'accessory.darker',
+  90: 'accessory.lighter', 95: 'accessory.light_mid', 100: 'accessory.neutral', 105: 'accessory.dark_mid',
+  110: 'accessory.darker',
   120: 'trim.lighter', 125: 'trim.light_mid', 130: 'trim.neutral', 135: 'trim.dark_mid', 140: 'trim.darker',
   150: 'cloth.lighter', 155: 'cloth.light_mid', 160: 'cloth.neutral', 165: 'cloth.dark_mid', 170: 'cloth.darker',
-  180: 'leather.lighter', 185: 'leather.light_mid', 190: 'leather.neutral', 195: 'leather.dark_mid', 200: 'leather.darker'
+  180: 'leather.lighter', 185: 'leather.light_mid', 190: 'leather.neutral', 195: 'leather.dark_mid',
+  200: 'leather.darker'
 };
 
 /* -------------------------------------------- */
@@ -182,7 +260,7 @@ export function codeTableFor(feccType) {
 /**
  * The red codes a palette's shades encode as in the body table, in `shadesFor` order.
  *
- * The importer builds its drop boxes and its automatic ramps from these (fecc-import-manual.mjs, fecc-import.mjs).
+ * The importer builds its drop boxes and its automatic ramps from these (fecc-sprite-importer.mjs, fecc-import.mjs).
  * @param {string} slotKey        Palette key.
  * @returns {number[]}
  */
@@ -216,11 +294,8 @@ export function codeForType(code, feccType) {
 /* -------------------------------------------- */
 
 /**
- * Derive, per family, which shades of each palette the tables actually reference.
- *
- * Computed from the tables instead of listed, so the two can't drift apart. An empty array means the palette row does
- * nothing for that layer type, and the colour panel greys out the whole row. That's how a face layer shows the
- * palettes it can't use as unavailable, not merely unused.
+ * Derive from the code tables, per family, which shades of each palette they reference. An empty array means the
+ * palette does nothing for that layer type, and the colour panel greys out its whole row.
  * @returns {object}
  */
 function buildActiveShades() {
@@ -280,18 +355,13 @@ export function slotToPaletteShade(code, feccType) {
 /* -------------------------------------------- */
 
 /**
- * Decode a coarse slot to a palette shade.
- *
- * Shipped grayscale assets, whose red is bucketed by tens with non-zero green and blue, need it to recolour exactly
- * as they did before the five-stop ramps. Their three shades land on the new ramp's first, third and fifth stops.
- *
- * Slots 21 to 24 are never reached, since decodeShadeKey skips wild-card reds before asking. They stay listed as a
- * record of the data format.
+ * Decode a coarse slot, the red byte bucketed by tens, to a palette shade, for shipped grayscale assets. Their three
+ * shades land on the five-stop ramp's first, third and fifth stops.
  * @param {number} slot           Coarse slot index.
  * @param {string} feccType       Layer's part type.
  * @returns {string|null}
  */
-function legacySlotToShade(slot, feccType) {
+function coarseSlotToShade(slot, feccType) {
   const faceLike = FACE_LIKE_TYPES.has(feccType);
   switch (slot) {
     case 0:  return 'outline';
@@ -315,10 +385,6 @@ function legacySlotToShade(slot, feccType) {
     case 18: return 'leather.lighter';
     case 19: return 'leather.neutral';
     case 20: return 'leather.darker';
-    case 21: return faceLike ? null : 'eye.lighter';
-    case 22: return faceLike ? null : 'eye.darker';
-    case 23: return faceLike ? null : 'accessory.lighter';
-    case 24: return faceLike ? null : 'accessory.darker';
     default: return null;
   }
 }
@@ -326,18 +392,9 @@ function legacySlotToShade(slot, feccType) {
 /* -------------------------------------------- */
 
 /**
- * Decode one pixel to the palette shade it stands for on a layer type, or null where it recolours nothing.
- *
- * A pixel takes the exact path when its green and blue are zero and its red is one of the layer type's codes.
- * Shipped assets are not clean grayscale: some pixels carry zeroed green and blue with a red that is not a code
- * (leather's darker at 202, metal at 93), and those fall through to the coarse slot, the red bucketed by tens.
- *
- * The coarse path skips every red from WILDCARD_MIN up, because sprites made before the wild-card palettes existed
- * used that range for static highlights. New imports zero green and blue for real wild-card pixels, while old static
- * highlights kept theirs, so both kinds sit side by side in one asset library.
- *
- * recolourImageData builds its lookups from this, and the colour panel's shade-usage scan (fecc-colour-panel.mjs)
- * decodes every pixel through it.
+ * Decode one pixel to the palette shade it stands for on a layer type, or null where it recolours nothing. A zero
+ * green and blue with a code in red decodes exactly; anything else, including the shipped assets' stray reds, falls to
+ * the coarse slot, which skips every red from WILDCARD_MIN up because older sprites used that range for highlights.
  * @param {number} r              Red byte.
  * @param {number} g              Green byte.
  * @param {number} b              Blue byte.
@@ -348,7 +405,7 @@ export function decodeShadeKey(r, g, b, feccType) {
   const exact = g === 0 && b === 0 ? slotToPaletteShade(r, feccType) : null;
   if (exact) return exact;
   if (r >= WILDCARD_MIN) return null;
-  return legacySlotToShade((r / 10) | 0, feccType);
+  return coarseSlotToShade((r / 10) | 0, feccType);
 }
 
 /* -------------------------------------------- */
@@ -394,11 +451,9 @@ export function buildLut(palette, feccType) {
 /* -------------------------------------------- */
 
 /**
- * Build recolourImageData's two lookups, indexed by red byte, from decodeShadeKey.
- *
- * `zeroed` is for a pixel whose green and blue are both zero, and `tinted` for any other pixel. An exact code whose
- * shade the palette can't supply takes its coarse slot's colour instead, so a sparse palette still recolours what it
- * can. Each shade's colour is looked up once, since the canvas view rebuilds these on every frame of a brush stroke.
+ * Build recolourImageData's two lookups by red byte: `zeroed` for a pixel whose green and blue are zero, `tinted` for
+ * any other. An exact code the palette can't colour takes its coarse slot's colour, and the canvas view rebuilds these
+ * on every frame of a brush stroke, so each shade is looked up once.
  * @param {object} palette                        The palette.
  * @param {string} feccType                       Layer's part type.
  * @returns {{zeroed: Array<object|null>, tinted: Array<object|null>}}
@@ -423,11 +478,8 @@ function buildPixelLuts(palette, feccType) {
 /* -------------------------------------------- */
 
 /**
- * Rewrite every opaque pixel of decoded image data against the palette, in place.
- *
- * Each pixel is decoded as decodeShadeKey describes, through the lookups buildPixelLuts prepares. A pixel with no
- * colour to take is left as it is. The parts library's thumbnails, fecc-recolour.mjs and the canvas view all use it,
- * so a swatch and the canvas can't disagree.
+ * Rewrite every opaque pixel of decoded image data against the palette, in place, decoding as decodeShadeKey does and
+ * leaving a pixel with no colour to take as it is. Every palette recolour in Studio goes through it.
  * @param {Uint8ClampedArray} data        Pixel data, mutated in place.
  * @param {object} palette                The palette.
  * @param {string} feccType               Layer's part type.

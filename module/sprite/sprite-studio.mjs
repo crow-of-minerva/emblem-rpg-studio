@@ -1,18 +1,29 @@
-/** @layer sprite-studio */
+/*
+ * Sprite Studio: the window that edits one item's image on the shared pixel canvas, with Adjustments and Recolour
+ * trays. The system opens it through `api.openSpriteStudio` when a user right-clicks an item sheet's image. A save
+ * writes the image to the world's item art folder, through the host client for a user who can't upload.
+ */
+
 import { createStudioNotifier } from '../foundry/notify.mjs';
 import { CanvasView } from '../editor/canvas-view.mjs';
+import { downloadImage, pickLocalImage } from '../editor/image-sources.mjs';
+import { canUploadFiles, listStudioFolder } from '../foundry/files.mjs';
+import { itemArtFolder } from '../foundry/studio-folders.mjs';
+import { itemArtFilename } from './item-art-name.mjs';
 import {
-  downloadImage, pickLocalImage, itemArtFolder, itemArtFilename
-} from '../editor/io.mjs';
-import { MODULE_ID, SPRITE_STUDIO_TEMPLATE } from '../constants.mjs';
-import { savedPixelArtUpdate } from '../foundry/documents.mjs';
-import { STUDIO_ACCESS, STUDIO_REFUSALS } from '../admission.mjs';
+  ITEM_ART_SAVED_FLAG, MODULE_ID, SPRITE_STUDIO_TEMPLATE, STUDIO_ACCESS_HOOK, TOOL_RAIL_TEMPLATE
+} from '../constants.mjs';
+import { savedPixelArtUpdate, updateChecked } from '../foundry/documents.mjs';
+import { STUDIO_ACCESS, STUDIO_REFUSALS } from '../access-rules.mjs';
 import { itemArtAccessFor, refuseStudio } from '../foundry/access.mjs';
-import { publishItemArtFile } from '../foundry/publication-transport.mjs';
+import { itemArtPathsHeldByOthers, publishItemArtFile } from '../foundry/publication-transport.mjs';
 import { pixelArtCropTransparent } from '../utils/pixel-art.mjs';
-import { FeccColourPanel } from '../character/fecc/fecc-colour-panel.mjs';
-import { EmblemApp } from '../editor/app.mjs';
+import { bust } from '../utils/path.mjs';
+import { canvasToPngBlob } from '../utils/image.mjs';
+import { RecolourPanel } from '../editor/recolour-panel.mjs';
+import { StudioWindow } from '../foundry/studio-window.mjs';
 import { scopeStudioKeys } from '../editor/key-scope.mjs';
+import { wireToolRail } from '../editor/tool-rail.mjs';
 
 /* -------------------------------------------- */
 /*  Reporting                                   */
@@ -34,6 +45,29 @@ function onUnlinkedToken(item) {
 
 /* -------------------------------------------- */
 
+/**
+ * Whether this user's save can reach the Item. A user without Upload Files saves through the host client, which
+ * writes art only for a world Item or an Item on a world Actor, never for one in a compendium.
+ * @param {Item} item
+ * @returns {boolean}
+ */
+function saveReachesItem(item) {
+  return !item.pack || canUploadFiles();
+}
+
+/* -------------------------------------------- */
+
+/**
+ * Warn that this user's save can't reach an Item in a compendium.
+ * @param {Item} item
+ */
+function warnCompendiumNeedsUpload(item) {
+  notify.warn(`Saving art for ${item.name}, an Item in a compendium, needs Foundry's Upload Files permission. `
+    + 'Ask the Gamemaster for it.');
+}
+
+/* -------------------------------------------- */
+
 /** Handlebars template for the studio. */
 const TEMPLATE = SPRITE_STUDIO_TEMPLATE;
 
@@ -50,34 +84,17 @@ const TEMPLATE = SPRITE_STUDIO_TEMPLATE;
  * @returns {object}                      A flat update payload for `Document#update`.
  */
 function savedArtUpdate(path) {
-  return { ...savedPixelArtUpdate(path), [`flags.${MODULE_ID}.artSavedAt`]: Date.now() };
+  return { ...savedPixelArtUpdate(path), [`flags.${MODULE_ID}.${ITEM_ART_SAVED_FLAG}`]: Date.now() };
 }
 
 /* -------------------------------------------- */
 
 /**
- * An art path with a cache-busting query, so a file overwritten at the same path is read from disk again. Data and
- * blob URLs are returned as they are.
- * @param {string} path                   Stored path.
- * @returns {string}
+ * The item art editor, opened from an item sheet portrait's right-click through `api.openSpriteStudio`: one layer on
+ * the shared CanvasView, with recolour and adjustment trays. Saving writes the art into the world and points the item
+ * at it, and nothing is kept as a draft, so closing with unsaved edits asks first.
  */
-function bustedArtPath(path) {
-  if (/^(data|blob):/i.test(path)) return path;
-  return `${path}${path.includes('?') ? '&' : '?'}${Date.now()}`;
-}
-
-/* -------------------------------------------- */
-
-/**
- * The item art editor: a single-layer pixel canvas with recolour and adjustment side panels ("trays"). The system's
- * `openStudioForItem` opens it through `api.openSpriteStudio` when an author right-clicks an item sheet's portrait.
- *
- * It uses the shared editor canvas (`CanvasView` in editor/canvas-view.mjs), the same one Character Studio uses, so
- * item art and character art reduce, place and paint identically. It edits one destination: this item's image.
- *
- * Saving writes the art into the world and points the item at it.
- */
-export class EmblemSpriteStudio extends EmblemApp {
+export class EmblemSpriteStudio extends StudioWindow {
   /* -------------------------------------------- */
 
   /**
@@ -90,16 +107,17 @@ export class EmblemSpriteStudio extends EmblemApp {
     this.view = null;
     this._mounted = false;
     this._colourPanel = null;
+    this._activeTray = EmblemSpriteStudio.TRAY_KEYS[0];
     this._adjustWired = false;
     this._adjustBusy = false;  // guards selection-change reentrancy during apply/cancel
+    // The canvas's edit counter when the item's art was last loaded or saved. Any other count means unsaved edits.
+    this._cleanSerial = 0;
+    // Set while the unsaved-changes question is open, so a second close doesn't ask again.
+    this._askingToClose = false;
   }
 
   /* -------------------------------------------- */
   /*  Configuration                               */
-  /* -------------------------------------------- */
-
-  static TITLE = 'Emblem Sprite Studio';
-
   /* -------------------------------------------- */
 
   /** The tray body's width. The window opens wide enough for the rail and a tray, since a tray is always open. */
@@ -108,10 +126,8 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * The trays, in rail order. The first is open when the window is built.
-   *
-   * One of them is always open, because a rail with everything collapsed would leave the pane empty for no gain. So
-   * the rail tabs switch between trays instead of toggling one on and off.
+   * The trays, in rail order, the first open when the window is built. One is always open, so the rail tabs switch
+   * between trays rather than toggling one.
    */
   static TRAY_KEYS = ['adjust', 'colour'];
 
@@ -137,7 +153,8 @@ export class EmblemSpriteStudio extends EmblemApp {
 
   /* -------------------------------------------- */
 
-  static PARTS = { main: { template: TEMPLATE } };
+  /** The window's template, and the tool rail partial it includes. */
+  static PARTS = { main: { template: TEMPLATE, templates: [TOOL_RAIL_TEMPLATE] } };
 
   /* -------------------------------------------- */
 
@@ -145,41 +162,25 @@ export class EmblemSpriteStudio extends EmblemApp {
   _titleSubject() { return this.item?.name ?? ''; }
 
   /* -------------------------------------------- */
-
-  /**
-   * Repaint the window title so the edited item reads as the studio's subject.
-   *
-   * ApplicationV2 writes the title as escaped text, so the two-tone label can only exist as post-render DOM.
-   * @private
-   */
-  _paintWindowTitle() {
-    const heading = this.element?.querySelector('.window-header .window-title');
-    if (!heading) return;
-    const subject = this._titleSubject();
-    const base = this._titleBase();
-    heading.innerHTML = subject
-      ? `${base} <span class="sts-title-subject">${foundry.utils.escapeHTML(subject)}</span>`
-      : base;
-  }
-
-  /* -------------------------------------------- */
   /*  Opening                                     */
   /* -------------------------------------------- */
 
   /**
-   * Open the studio for an item, refusing an opening with nothing to edit.
-   *
-   * The Gamemaster and Assistant GMs edit any Item's art. A listed Trusted Player edits art only for Items they own,
-   * and never for an Item in a compendium, whether stored there or embedded in a compendium Actor. Nobody, GMs
-   * included, opens it on an Item carried by an unlinked token's Actor, whose art no save can reach.
+   * Open the studio for an item: a GM or Assistant GM for any Item, and a listed Trusted player for one they own
+   * outside a compendium. It refuses where no save could reach the art: an Item of an unlinked token's Actor, and an
+   * Item in a compendium for an Assistant GM without Upload Files.
    * @param {Item} item                             Item to edit.
-   * @returns {EmblemSpriteStudio|null}
+   * @returns {Promise<EmblemSpriteStudio|null>}
    */
-  static open(item) {
+  static async open(item) {
     if (!item) return null;
     if (onUnlinkedToken(item)) return refuseStudio(STUDIO_REFUSALS.UNLINKED_TOKEN_ITEM);
     const access = itemArtAccessFor(item);
     if (access.access === STUDIO_ACCESS.DENIED) return refuseStudio(access.code);
+    if (!saveReachesItem(item)) {
+      warnCompendiumNeedsUpload(item);
+      return null;
+    }
     return super.open(item);
   }
 
@@ -188,9 +189,9 @@ export class EmblemSpriteStudio extends EmblemApp {
   /**
    * One studio per item, since two would each hold their own canvas and one save would overwrite the other.
    * @param {Item} item                             Item to edit.
-   * @returns {string|null}
+   * @returns {string}
    */
-  static _instanceKey(item) { return item?.uuid ?? null; }
+  static _instanceKey(item) { return item.uuid; }
 
   /* -------------------------------------------- */
 
@@ -216,34 +217,24 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Mount the canvas and wire everything, on the first render only.
-   *
-   * The canvas holds the art being edited, so `_mounted` stops later renders from building it again. A later render
-   * would still replace the part's HTML (HandlebarsApplicationMixin swaps the element) and drop the mounted canvas,
-   * which is then never remounted.
-   *
-   * Selection changes go to both trays: the recolour panel acts on the selected pixels, and the adjustment tray drops
-   * a preview whose selection has moved.
-   *
-   * Pixel changes go to the recolour panel too. It maps tones from a copy of the layer and rewrites the whole layer
-   * from that copy, so without a refresh the next tone edit would wipe out an adjustment made since.
-   * `refreshFromLayer` rebuilds the copy; the panel's own writes skip the refresh. The same callback enables or
-   * disables the adjustment tray, since the layer to adjust arrives with the art load and changes on every import or
-   * clear.
+   * Paint the open tray on every render, and on the first only, guarded by `_mounted`, mount the canvas, wire it and
+   * start following the Item. Selection changes reach both trays, and pixel changes refresh the recolour panel's copy
+   * of the layer, so its next tone edit keeps a later adjustment, and switch the adjustment tray on or off.
    */
-  _onRender(context, options) {
-    super._onRender(context, options);
-    this._paintWindowTitle();
+  async _onRender(context, options) {
+    await super._onRender(context, options);
     this._applyTray();
     if (this._mounted) return;
     this._mounted = true;
     const root = this.element;
     const mount = root.querySelector('.ete-canvas-mount');
     if (!mount) return;
-    this.view = new CanvasView({ mountEl: mount, side: 'avatar', initialScale: 1 });
-    this._releaseKeys = scopeStudioKeys(root, { undo: () => this.view?.undo(), redo: () => this.view?.redo() });
+    // Item art has a brush colour of its own, and no token preview, since it is never shown on the map as a token.
+    this.view = new CanvasView({ mountEl: mount, brushGroup: 'item', initialScale: 1 });
+    this._lifecycle.onRelease(scopeStudioKeys(root, { canvases: () => [this.view] }));
+    this._installDocumentSync();
     // Keep the Recolour tray bound to the live layer, which changes on an import or a flatten.
-    this.view.onSelectionChange = (layer) => this._colourPanel?.setActivePalette(null, null, layer ?? null);
+    this.view.onSelectionChange = (layer) => this._colourPanel?.setLayer(layer ?? null);
     this.view.onSelectionMaskChange = (reason) => {
       this._colourPanel?.onCanvasSelectionChanged(reason);
       this._onSelectionChangedForAdjust();
@@ -251,77 +242,61 @@ export class EmblemSpriteStudio extends EmblemApp {
     // An adjustment, an undo or any other pixel write changes the pixels the Recolour tray copied its tones from,
     // and the panel rebuilds its copy where the two differ.
     this.view.onLayerStateChanged = (layer) => {
-      if (this._colourPanel?._layer === layer) this._colourPanel.refreshFromLayer();
+      if (this._colourPanel?.layer === layer) this._colourPanel.refreshFromLayer();
       // An edit or undo keeps an open preview as its own step and ends the session, so the sliders return to
       // neutral rather than re-applying their values on top of the kept result.
       if (!this.view?.hasAdjustSession()) this._resetAdjustSliders();
       this._syncAdjustEnabled();
     };
-    this._wireTools(root.querySelector('[data-item-tools]'));
+    wireToolRail(root.querySelector('[data-tool-rail]'), this.view);
     this._wireAdjustments(root);
     this._loadItemArt()
-      .catch(e => { notify.failure('emblem-rpg-studio | item art load failed:', e); })
-      .finally(() => this._ensureColourPanel());
+      .catch(error => { notify.failure("The item's art could not be shown in Sprite Studio.", error); })
+      .finally(() => {
+        this._ensureColourPanel();
+        this._markClean();
+      });
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Build the recolour tray, once a layer exists to bind it to.
-   *
-   * It isn't built with the window, because the panel binds to a layer and item art loads later. Item art isn't
-   * palette-indexed, so the panel uses its per-tone recolour mode on its own.
+   * Follow changes made outside the window while it is open, on every client that has it open. The title follows a
+   * renamed Item. The window closes without asking when the Item, or the Actor carrying it, is deleted, or when the
+   * user loses Studio access, since nothing could save the edits any more.
+   * @private
    */
-  _ensureColourPanel() {
-    if (this._colourPanel || !this.view) return;
-    const root = this.element?.querySelector('[data-recolour-root]');
-    if (!root) return;
-    this._colourPanel = new FeccColourPanel({
-      side: 'avatar',
-      root,
-      view: this.view,
-      layer: this.view.selectedLayer ?? this.view.layers[0] ?? null,
-      palette: null,
-      feccType: null,
-      onChange: () => {},
-      onBroadcast: null
+  _installDocumentSync() {
+    this._lifecycle.hook('updateItem', (item) => {
+      if (item.uuid === this.item.uuid) this._paintTitle();
+    });
+    const closeDeleted = () => {
+      notify.warn(`${this.item.name} was deleted: its Emblem Sprite Studio window was closed.`);
+      this._closeWithoutAsking();
+    };
+    this._lifecycle.hook('deleteItem', (item) => { if (item.uuid === this.item.uuid) closeDeleted(); });
+    this._lifecycle.hook('deleteActor', (actor) => { if (actor.uuid === this.item.parent?.uuid) closeDeleted(); });
+    this._lifecycle.hook(STUDIO_ACCESS_HOOK, () => {
+      if (itemArtAccessFor(this.item).access !== STUDIO_ACCESS.DENIED) return;
+      notify.warn('Your Emblem RPG Studio access was removed, so Sprite Studio closed without saving.');
+      this._closeWithoutAsking();
     });
   }
 
   /* -------------------------------------------- */
 
   /**
-   * Wire the tool rail.
-   *
-   * Only the tools that stay selected get the active marker. One-off actions such as undo, cut and deselect leave
-   * the current tool marked instead of looking like a tool of their own.
-   * @param {HTMLElement} toolsEl   Tool rail element.
+   * Build the Recolour tray, once a layer exists to bind it to. It isn't built with the window, because the panel
+   * binds to a layer and item art loads later.
    */
-  _wireTools(toolsEl) {
-    if (!toolsEl) return;
-    const view = this.view;
-    const syncActive = (toolName) => {
-      toolsEl.querySelectorAll('.ete-tool-btn').forEach(b => {
-        if (['pan', 'wand', 'rect', 'move', 'brush', 'fill'].includes(b.dataset.tool)) {
-          b.classList.toggle('is-active', b.dataset.tool === toolName);
-        }
-      });
-    };
-    toolsEl.querySelectorAll('.ete-tool-btn').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        const act = btn.dataset.toolAction;
-        if (act === 'undo') { view.undo(); return; }
-        if (act === 'redo') { view.redo(); return; }
-        if (act === 'brushColor') { view.openBrushColorPicker(btn); return; }
-        if (act === 'rotateSelection') { view.rotateSelection(ev.shiftKey ? 90 : 15); return; }
-        if (act === 'copySelection') { view.copySelection(); return; }
-        if (act === 'pasteSelection') { if (view.pasteSelection()) syncActive('move'); return; }
-        const tool = btn.dataset.tool;
-        if (!tool) return;
-        if (tool === 'cut' || tool === 'deselect') { view.setTool(tool); return; }
-        syncActive(tool);
-        view.setTool(tool);
-      });
+  _ensureColourPanel() {
+    if (this._colourPanel || !this.view) return;
+    const root = this.element?.querySelector('[data-recolour-root]');
+    if (!root) return;
+    this._colourPanel = new RecolourPanel({
+      root,
+      view: this.view,
+      layer: this.view.selectedLayer ?? this.view.layers[0] ?? null
     });
   }
 
@@ -341,8 +316,8 @@ export class EmblemSpriteStudio extends EmblemApp {
     const view = this.view, item = this.item;
     const src = item?.img;
     let img = null;
-    if (src) { try { img = await downloadImage(bustedArtPath(src)); } catch (_) {
-      notify.failure('_loadItemArt failed', _);
+    if (src) { try { img = await downloadImage(bust(src, { keepQuery: true })); } catch (error) {
+      notify.failure("The item's art could not be loaded, so the canvas starts empty.", error);
     } }
     if (!img) return;
     view.loadImageAsPixelArt(img);
@@ -365,21 +340,15 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Pad the loaded art out to the full grid, then frame it.
-   *
-   * Padding first makes the whole canvas paintable, not only the pixels the source happened to cover.
-   *
-   * The fit waits a frame because the mount is sized on the next animation frame, so on a first load its display
-   * size isn't known yet.
+   * Pad the loaded art out to the full grid, so the whole canvas is paintable, then frame it on the next animation
+   * frame, once the mount has its display size.
    */
   _frameLoadedArt() {
     const view = this.view;
     if (!view) return;
-    view.expandLayerToWorkspace();
+    view.expandLayerToGrid();
     // A 0.2 fill leaves plenty of paintable space around the sprite.
-    requestAnimationFrame(() => { try { view.fitViewToContent(0.2); } catch (_) {
-      notify.failure('_frameLoadedArt failed', _);
-    } });
+    requestAnimationFrame(() => view.fitViewToContent(0.2));
   }
 
   /* -------------------------------------------- */
@@ -387,11 +356,8 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Flatten the canvas and encode it, cropped to every pixel that isn't fully transparent.
-   *
-   * It's cropped because the canvas is padded out past the art, so saving it whole would give every item's icon a
-   * transparent margin. Translucent pixels count as art, so soft shadows and anti-aliased rims survive the crop.
-   * It throws when the pixels can't be read, as with art from a host that sends no CORS headers.
+   * Flatten the canvas and encode it, cropped to the pixels that aren't fully transparent, so the padding adds no
+   * margin and soft edges survive. It throws when the pixels can't be read, as with art from a host without CORS.
    * @returns {Promise<Blob|null>}          Null, with a notification, when there is nothing to save.
    */
   async _exportBlob() {
@@ -400,8 +366,7 @@ export class EmblemSpriteStudio extends EmblemApp {
     if (!view.layers.length) { notify.warn('Nothing to save.'); return null; }
     const canvas = view.exportToCanvas(view.size);
     const cropped = pixelArtCropTransparent(canvas, 1);
-    return new Promise((resolve, reject) =>
-      cropped.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png'));
+    return canvasToPngBlob(cropped);
   }
 
   /* -------------------------------------------- */
@@ -409,7 +374,8 @@ export class EmblemSpriteStudio extends EmblemApp {
   /**
    * Whether this item can be written to at all.
    *
-   * Checked before the art is flattened and encoded, so a locked compendium is refused before any of that work.
+   * Checked before the art is flattened and encoded, so a locked compendium, or a compendium this user's save can't
+   * reach since their Upload Files permission was removed, is refused before any of that work.
    * @returns {boolean}
    */
   _canWriteItem() {
@@ -420,6 +386,10 @@ export class EmblemSpriteStudio extends EmblemApp {
     }
     if (!item.isOwner) {
       notify.warn(`No permission to edit ${item.name}.`);
+      return false;
+    }
+    if (!saveReachesItem(item)) {
+      warnCompendiumNeedsUpload(item);
       return false;
     }
     const pack = item.pack ? game.packs.get(item.pack) : null;
@@ -433,44 +403,120 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Save into the world and point the item at it.
-   *
-   * The file is named after the item, chosen against what the item art folder already holds.
-   * `publishItemArtFile` writes it: a GM or Assistant GM who can upload writes directly, and anyone else's file goes
-   * through the Gamemaster's browser, which checks the Item again.
+   * Save into the world under a name after the item, avoiding files the host would refuse to let this user overwrite,
+   * and point the item at it. When the Item update is refused, the window warns and stays open with its edits.
    * @returns {Promise<void>}
    */
   async _saveArt() {
     if (!this._canWriteItem()) return;
     const item = this.item;
     const folder = itemArtFolder();
+    // The edits the saved file holds. Edits made while it uploads still count as unsaved when the window closes.
+    const savedSerial = this.view?.editSerial ?? 0;
     try {
       const blob = await this._exportBlob();
       if (!blob) return;
-      const filename = await itemArtFilename(item, folder);
+      const taken = new Set(await listStudioFolder(folder));
+      const filename = itemArtFilename(item, folder, taken, itemArtPathsHeldByOthers(item));
       const path = await publishItemArtFile({ item, folder, filename, blob });
-      await item.update(savedArtUpdate(path));
-    } catch (e) {
-      notify.failure('Item art save failed.', e);
+      await updateChecked(item, savedArtUpdate(path));
+    } catch (error) {
+      notify.failure('The item art could not be saved.', error);
       return;
     }
+    this._cleanSerial = savedSerial;
     notify.info(`Saved art for ${item.name}.`);
     this.close();
   }
 
   /* -------------------------------------------- */
+  /*  Unsaved Changes                             */
+  /* -------------------------------------------- */
+
+  /** Count the canvas as matching the item's art, once the art has loaded. */
+  _markClean() {
+    this._cleanSerial = this.view?.editSerial ?? 0;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Whether the canvas has edits since the item's art was loaded or saved. Undoing back to the loaded art still
+   * counts, because the edit counter only goes up.
+   * @returns {boolean}
+   */
+  _hasUnsavedEdits() {
+    return !!this.view && this.view.editSerial !== this._cleanSerial;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Close the window, asking first when the canvas has unsaved edits: Sprite Studio keeps no draft, so closing loses
+   * them. Foundry's Escape-key close is still ignored by StudioWindow without asking.
+   * @returns {Promise<this>}
+   */
+  async close(options = {}) {
+    if (options.closeKey || !this._hasUnsavedEdits()) return super.close(options);
+    if (this._askingToClose) return this;
+    this._askingToClose = true;
+    let discard = false;
+    try { discard = await this._confirmDiscard(); }
+    finally { this._askingToClose = false; }
+    return discard ? super.close(options) : this;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Close the window without the unsaved-changes question, once the edits could no longer be saved.
+   * @returns {Promise<this>}
+   */
+  _closeWithoutAsking() {
+    return super.close();
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Ask whether to close and lose the unsaved edits.
+   * @returns {Promise<boolean>}            Whether the user chose Discard. Closing the dialog keeps the window open.
+   */
+  async _confirmDiscard() {
+    const name = foundry.utils.escapeHTML(this.item?.name ?? 'this item');
+    const result = await foundry.applications.api.DialogV2.wait({
+      window: { title: 'Close Sprite Studio' },
+      content: `<p>The art for <strong>${name}</strong> has unsaved changes. Close anyway?</p>`,
+      buttons: [
+        { action: 'cancel',  label: 'Cancel',  default: true,  callback: () => false },
+        { action: 'discard', label: 'Discard', default: false, callback: () => true  }
+      ],
+      rejectClose: false
+    });
+    return !!result;
+  }
 
   /* -------------------------------------------- */
   /*  Trays                                       */
   /* -------------------------------------------- */
 
   /**
-   * Reflect the open tray into the rail.
-   *
-   * Leaving the adjustment tray discards any unapplied preview, since a preview the user can't see or cancel would
-   * otherwise stay on the canvas until something else cleared it.
-   *
-   * The window is built wide enough for a tray and never resizes, since one tray is always open.
+   * Open the tray a rail tab names. Picking the tray already open does nothing, since one tray is always open.
+   * @param {string} key                One of TRAY_KEYS.
+   * @returns {boolean}                 Whether the open tray changed.
+   */
+  setTray(key) {
+    if (!EmblemSpriteStudio.TRAY_KEYS.includes(key) || key === this._activeTray) return false;
+    this._activeTray = key;
+    this._applyTray();
+    return true;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Reflect the open tray into the rail. Leaving the adjustment tray drops any unapplied preview, which could no longer
+   * be seen or cancelled.
    */
   _applyTray() {
     const side = this.element?.querySelector('.fecc-side[data-fecc-side="item"]');
@@ -485,7 +531,7 @@ export class EmblemSpriteStudio extends EmblemApp {
     if (key === 'colour') {
       this._ensureColourPanel();
       const layer = this.view?.selectedLayer ?? this.view?.layers[0] ?? null;
-      this._colourPanel?.setActivePalette(null, null, layer);
+      this._colourPanel?.setLayer(layer);
     } else if (key === 'adjust') {
       this._syncAdjustEnabled();
     }
@@ -533,12 +579,8 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Preview the adjustment live as a slider moves.
-   *
-   * The first movement begins a session, which records the starting pixels. Every later preview re-applies from
-   * those pixels instead of stacking, so a slider can be dragged back and forth without degrading the image. The
-   * session covers the selected pixels, or the whole image when nothing is selected, so an adjustment never needs a
-   * selection first.
+   * Preview the adjustment live as a slider moves, always from the pixels recorded when the first movement began the
+   * session, on the selected pixels or the whole image when nothing is selected.
    */
   _onAdjustInput() {
     if (this._activeTray !== 'adjust') return;
@@ -641,23 +683,21 @@ export class EmblemSpriteStudio extends EmblemApp {
   /* -------------------------------------------- */
 
   /**
-   * Release the keys and tear down the canvas and the tray.
+   * Tear down the canvas and the tray. StudioWindow's `_onClose` then releases the keys.
    *
    * Each step is isolated, so a failure in one still releases the others.
-   * @returns {*}
+   * @param {object} options
    */
   _onClose(options) {
-    this._releaseKeys?.();
-    this._releaseKeys = null;
-    try { this.view?.destroy(); } catch (_) {
-      notify.failure('_onClose failed', _);
+    try { this.view?.destroy(); } catch (error) {
+      notify.failure('The Sprite Studio canvas could not be closed.', error);
     }
     this.view = null;
-    try { this._colourPanel?.destroy(); } catch (_) {
-      notify.failure('_onClose failed', _);
+    try { this._colourPanel?.destroy(); } catch (error) {
+      notify.failure('The Sprite Studio colour panel could not be closed.', error);
     }
     this._colourPanel = null;
-    return super._onClose(options);
+    super._onClose(options);
   }
 
   /* -------------------------------------------- */

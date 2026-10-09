@@ -1,7 +1,7 @@
 {
-  "version": 1,
+  "version": 2,
   "assets": {
-    "swordsman-variant-idle": {
+    "idle/swordsman-variant-idle": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -344,7 +344,7 @@
       "category": "idle",
       "savedAt": 1789885622235
     },
-    "swordsman-variant-atk": {
+    "attack/swordsman-variant-atk": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -687,7 +687,7 @@
       "category": "attack",
       "savedAt": 1789885622331
     },
-    "swordsman-variant-crit": {
+    "attack/swordsman-variant-crit": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -1030,7 +1030,7 @@
       "category": "attack",
       "savedAt": 1789885622444
     },
-    "swordsman-variant-ddg": {
+    "dodge/swordsman-variant-ddg": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -1373,7 +1373,7 @@
       "category": "dodge",
       "savedAt": 1789885622612
     },
-    "divine-guardian-sword": {
+    "idle/divine-guardian-sword": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -1716,7 +1716,7 @@
       "category": "idle",
       "savedAt": 1789950148886
     },
-    "divine-guardian-flying-sword": {
+    "idle/divine-guardian-flying-sword": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -2059,7 +2059,7 @@
       "category": "idle",
       "savedAt": 1789950149037
     },
-    "divine-guardian-flying-sword-atk": {
+    "attack/divine-guardian-flying-sword-atk": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -2402,7 +2402,7 @@
       "category": "attack",
       "savedAt": 1789950149153
     },
-    "divine-guardian-flying-ddg": {
+    "dodge/divine-guardian-flying-ddg": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -2745,7 +2745,7 @@
       "category": "dodge",
       "savedAt": 1789950149228
     },
-    "dancer-idle": {
+    "idle/dancer-idle": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -3088,7 +3088,7 @@
       "category": "idle",
       "savedAt": 1789955344216
     },
-    "dancer-idle-2": {
+    "idle/dancer-idle-2": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -3431,7 +3431,7 @@
       "category": "idle",
       "savedAt": 1789955344844
     },
-    "dancer-idle-3": {
+    "idle/dancer-idle-3": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -3774,7 +3774,7 @@
       "category": "idle",
       "savedAt": 1789955344977
     },
-    "dancer-idle-4": {
+    "idle/dancer-idle-4": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -4117,7 +4117,7 @@
       "category": "idle",
       "savedAt": 1789955345212
     },
-    "dancer-idle-5": {
+    "idle/dancer-idle-5": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -4460,7 +4460,7 @@
       "category": "idle",
       "savedAt": 1789955345356
     },
-    "spider-creature-idle": {
+    "idle/spider-creature-idle": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -4803,7 +4803,7 @@
       "category": "idle",
       "savedAt": 1789997297238
     },
-    "spider-creature-ddg": {
+    "dodge/spider-creature-ddg": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -5146,7 +5146,7 @@
       "category": "dodge",
       "savedAt": 1789997297287
     },
-    "spider-creature-atk": {
+    "attack/spider-creature-atk": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -5489,7 +5489,7 @@
       "category": "attack",
       "savedAt": 1789997297329
     },
-    "spider-creature-crit": {
+    "attack/spider-creature-crit": {
       "palette": {
         "outline": "#382040",
         "hair": {
@@ -5832,7 +5832,7 @@
       "category": "attack",
       "savedAt": 1789997297364
     },
-    "spider-creature-crit-2": {
+    "attack/spider-creature-crit-2": {
       "palette": {
         "outline": "#382040",
         "hair": {

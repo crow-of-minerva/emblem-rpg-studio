@@ -1,15 +1,17 @@
 <div class="ets-root">
 
-  {{!-- Empty state: shown until an actor is loaded. The whole window is the
-       drop target, so this is a prompt rather than a control. --}}
+  {{!-- Empty state: shown until an actor is loaded. The whole window is the drop target, so this is a prompt rather
+       than a control. --}}
   <div class="ets-empty" data-ets-empty>
     <div class="ets-empty-msg">Drag an actor to load them in the studio.</div>
   </div>
 
-  {{!-- Loaded state: tab strips, class/entry/type selectors, per-tab content,
-       and the single footer row. Shown only when an actor is loaded. --}}
+  {{!-- Loaded state: tab strips, class/entry/type selectors, per-tab content, and the single footer row. Shown only
+       when an actor is loaded. --}}
   <div class="ets-bound" data-ets-bound>
 
+    {{!-- The class and tab strips, like the actor switcher in the footer, are filled in code from the
+         character-studio/ partials, so they can be redrawn without rendering the whole window. --}}
     <div class="ets-class-strip" data-ets-class-strip></div>
     <div class="ets-tabs-strip" data-ets-tabs-strip></div>
 
@@ -28,31 +30,37 @@
       </label>
       <span class="ets-tab-controls-acts">
         <button type="button" class="ets-submit" data-action="submit">Submit</button>
-        <button type="button" class="ets-pane-toggle" data-action="hidePane" data-pane="avatar" data-tooltip="Hide avatar pane">
+        <button type="button" class="ets-pane-toggle" data-action="hidePane" data-pane="avatar"
+          data-tooltip="Hide avatar pane">
           <i class="fas fa-eye-slash"></i> Avatar
         </button>
-        <button type="button" class="ets-pane-toggle" data-action="hidePane" data-pane="token" data-tooltip="Hide token pane">
+        <button type="button" class="ets-pane-toggle" data-action="hidePane" data-pane="token"
+          data-tooltip="Hide token pane">
           <i class="fas fa-eye-slash"></i> Token
         </button>
-        <button type="button" class="ets-pane-show" data-action="showPane" data-pane="avatar" data-tooltip="Show avatar pane">
+        <button type="button" class="ets-pane-show" data-action="showPane" data-pane="avatar"
+          data-tooltip="Show avatar pane">
           <i class="fas fa-eye"></i> Avatar
         </button>
-        <button type="button" class="ets-pane-show" data-action="showPane" data-pane="token" data-tooltip="Show token pane">
+        <button type="button" class="ets-pane-show" data-action="showPane" data-pane="token"
+          data-tooltip="Show token pane">
           <i class="fas fa-eye"></i> Token
         </button>
       </span>
     </div>
 
-    {{!-- Tab content: each tab's pane is built in JS (_materializeTab). A render replaces this container, and
-         _onRender moves the live panes into the new one, so the canvases survive. --}}
+    {{!-- Tab content: each tab's pane is rendered from character-studio/tab-pane.hbs when the window first builds
+         the tab, and its canvases are mounted in code. A render replaces this container, and _onRender moves the
+         live panes into the new one, so the canvases survive. --}}
     <div class="ets-tab-content" data-ets-tab-content></div>
 
-    {{!-- Footer: actor chips, the per-actor filename prefix and the exact name
-         the active tab's token/avatar will save to, on one row. --}}
+    {{!-- Footer: actor chips, the per-actor filename prefix and the exact name the active tab's token/avatar will save
+         to, on one row. --}}
     <footer class="ets-foot">
       <span class="ets-actor-switcher" data-ets-actor-switcher></span>
       <label class="ets-prefix-label" data-tooltip="Filename prefix for saved images, blank for default">Prefix</label>
-      <input type="text" class="ets-prefix-input" data-ets-prefix spellcheck="false" autocomplete="off" placeholder="actor-prefix" />
+      <input type="text" class="ets-prefix-input" data-ets-prefix spellcheck="false" autocomplete="off"
+        placeholder="actor-prefix" />
       <span class="ets-filename-preview" data-ets-filename-preview data-tooltip="File this tab saves to">--</span>
     </footer>
   </div>

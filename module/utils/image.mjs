@@ -1,12 +1,20 @@
-/** @layer utils */
+/*
+ * Loading an image, encoding a canvas as a PNG, and the context options for canvases whose pixels Studio reads back.
+ */
 
 /**
- * Load an image into an element.
- *
- * Cross-origin is requested by default so the pixels can be read back. A data URL doesn't need it. A host that
- * sends no CORS headers refuses a cross-origin request outright, so with `retryWithoutCors` the image loads again
- * without it: the layer then displays even though its pixels can't be read. `downloadImage` in editor/io.mjs sets
- * that retry for other-origin URLs.
+ * Context options for the offscreen canvases whose pixels Studio reads back (undo entries, cut, move, recolour and
+ * import). Those canvases are kept in CPU memory, which also stops the browser's repeated-readback warning. The
+ * on-screen display and token preview canvases don't use these options and stay on the GPU.
+ * @type {object}
+ */
+export const READ_BACK = { willReadFrequently: true };
+
+/* -------------------------------------------- */
+
+/**
+ * Load an image into an element, asking for cross-origin access by default so its pixels can be read back. With
+ * `retryWithoutCors`, an image whose host refuses that is loaded again without it, and shows but can't be read.
  * @param {string} src                            Path, URL or data URL.
  * @param {object} [options]
  * @param {string|null} [options.crossOrigin='anonymous']   The crossOrigin attribute, or null to omit it.
@@ -22,5 +30,18 @@ export function loadImage(src, { crossOrigin = 'anonymous', retryWithoutCors = f
     img.src = src;
   });
   if (!retryWithoutCors) return attempt(true);
-  return attempt(true).catch(err => attempt(false).catch(() => { throw err; }));
+  return attempt(true).catch(error => attempt(false).catch(() => { throw error; }));
+}
+
+/* -------------------------------------------- */
+
+/**
+ * Encode a canvas as a PNG blob. It rejects when the browser gives no blob, as for an empty or oversized canvas, and
+ * when the canvas is tainted by art from another host, since toBlob then throws.
+ * @param {HTMLCanvasElement} canvas
+ * @returns {Promise<Blob>}
+ */
+export function canvasToPngBlob(canvas) {
+  return new Promise((resolve, reject) => canvas.toBlob(
+    blob => (blob ? resolve(blob) : reject(new Error('The image could not be encoded as a PNG.'))), 'image/png'));
 }

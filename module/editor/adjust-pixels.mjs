@@ -1,15 +1,18 @@
-/** @layer editor */
+/*
+ * Hue, saturation, brightness and contrast for a layer's pixels, as Sprite Studio's Adjustments tray applies them.
+ * Plain arithmetic on pixel arrays, with no DOM access.
+ */
+
+import { rgbToHsl } from '../utils/colour.mjs';
 
 /* -------------------------------------------- */
 /*  Adjustment                                  */
 /* -------------------------------------------- */
 
 /**
- * Apply hue, saturation, brightness and contrast to the masked pixels, or to all of them. Sprite Studio's adjust
- * panel drives it through `CanvasView#previewSelectionAdjust`, which runs it on every slider move, always on a copy
- * of the pixels from before the adjustment began, so dragging a slider back and forth can't stack the adjustment or
- * degrade the image. `CanvasView#commitSelectionAdjust` then keeps whatever the last preview produced. Fully
- * transparent pixels are skipped, so an erased pixel doesn't pick up a colour that a later paint would show.
+ * Apply hue, saturation, brightness and contrast to the masked pixels, or to all of them, skipping fully transparent
+ * ones so an erased pixel picks up no colour. `CanvasView#previewSelectionAdjust` runs it on a copy of the pixels from
+ * before the adjustment began, so moving a slider back and forth can't stack it.
  * @param {Uint8ClampedArray} data        Pixels, mutated in place.
  * @param {Uint8Array|null} mask          Which pixels to adjust, or null for every pixel.
  * @param {object} params                 Hue in degrees, saturation and brightness in percent, contrast in percent.
@@ -44,27 +47,6 @@ export function applyAdjustment(data, mask, params) {
 
 /* -------------------------------------------- */
 /*  Colour Space                                */
-/* -------------------------------------------- */
-
-/**
- * Convert 0-255 red, green and blue to hue, saturation and lightness, the space the adjustments work in.
- * @returns {{h: number, s: number, l: number}}   Hue in degrees, the rest as fractions.
- */
-function rgbToHsl(r, g, b) {
-  r /= 255; g /= 255; b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0; const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-    h *= 60;
-  }
-  return { h, s, l };
-}
-
 /* -------------------------------------------- */
 
 /**

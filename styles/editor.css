@@ -1,0 +1,647 @@
+/* The editor pane both studios share: toolbar, canvas and overlays, layers strip, footer, tool column. */
+
+.ete-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.ete-panes {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: row;
+  gap: var(--sts-gap);
+  min-height: 0;
+}
+
+/* ===========================================================
+ * Editor pane
+ * A raised panel on the window background: title, toolbar, then the work row (tool column beside the canvas and
+ * layers).
+ * =========================================================== */
+.ete-pane {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sts-panel-background);
+  border: none;
+  border-radius: 6px;
+  box-shadow: var(--sts-panel-shadow);
+  padding: 11px 13px;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ete-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  margin: 0 0 9px;
+  background: transparent;
+  border: none;
+  font-weight: 600;
+  font-size: 9.5px;
+  color: var(--sts-panel-title);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  flex: 0 0 auto;
+}
+
+.ete-pane-header i { color: var(--sts-panel-title); opacity: 0.85; font-size: 11px; }
+
+/* Pane toolbar: unboxed buttons, icons and small-caps labels that show their state by colour only.
+ * The spacers between groups are thin lines that stretch to fill the space between them. */
+.ete-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px 2px 8px;
+  border: none;
+  flex: 0 0 auto;
+}
+
+.ete-toolbar-spacer {
+  flex: 1 1 auto;
+  align-self: center;
+  height: 1px;
+  background: var(--sts-divider);
+}
+
+.ete-toolbar .sts-btn {
+  height: 16px;
+  min-height: 16px;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  gap: 4px;
+  transition: color 0.15s ease;
+}
+
+.ete-toolbar .sts-btn i {
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.ete-toolbar .sts-btn:hover:not(:disabled) {
+  background: transparent;
+  color: var(--sts-text);
+}
+
+.ete-toolbar .sts-btn.is-active {
+  background: transparent;
+  color: var(--sts-red-bright);
+  box-shadow: none;
+}
+
+.ete-toolbar .sts-btn.is-active:hover:not(:disabled) { color: var(--sts-red-bright); }
+
+.ete-toolbar .sts-btn-danger { color: var(--sts-rust); }
+.ete-toolbar .sts-btn-danger:hover:not(:disabled) { color: var(--sts-rust-bright); }
+
+.ete-toolbar .sts-btn-primary,
+.ete-toolbar [data-action="saveToken"],
+.ete-toolbar [data-action="saveAvatar"],
+.ete-toolbar [data-action="saveSheet"] {
+  color: var(--sts-gold-bright);
+}
+.ete-toolbar .sts-btn-primary:hover:not(:disabled) { color: var(--sts-gold-bright); }
+
+
+/* ---------- Work row: tool column frames canvas + splitter + layers ---------- */
+.ete-pane-work {
+  display: flex;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ete-work-col {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ete-canvas-mount {
+  margin: 0 auto;
+  display: block;
+  align-self: center;
+  background: var(--sts-canvas-backdrop);
+  border: none;
+  border-radius: 3px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  position: relative;
+}
+
+.ete-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: var(--cursor-grab);
+  touch-action: none;
+  user-select: none;
+}
+
+/* Spritesheet viewport: the mount fills the canvas area and clips the sheet, in the same grey other tabs show around
+ * their canvas. The edge shadow is a box-shadow, which takes no layout space, so the overlays stay on the pixels. */
+.ete-canvas-host.is-sheet-viewport {
+  background: var(--sts-canvas-backdrop);
+}
+.ete-canvas-host.is-sheet-viewport .ete-canvas {
+  background: var(--sts-canvas-backdrop);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.ete-canvas:active { cursor: var(--cursor-grab-down); }
+
+/* Drag handle between the canvas area and the layers strip. */
+.ete-layers-splitter {
+  flex: 0 0 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  background: transparent;
+  border: none;
+}
+.ete-layers-splitter::after {
+  content: "";
+  display: block;
+  width: 34px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 80ms ease, width 80ms ease;
+}
+.ete-layers-splitter:hover::after,
+.ete-layers-splitter.is-dragging::after {
+  background: var(--sts-gold);
+  width: 46px;
+}
+
+/* The layers strip has a set height, which only the splitter changes: extra layers scroll inside it, so the canvas
+ * never changes size with the layer count. */
+.ete-layers {
+  flex: 0 0 195px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 8px;
+  background: var(--sts-card-background);
+  border: none;
+  border-radius: 4px;
+  box-shadow: var(--sts-card-shadow);
+  box-sizing: border-box;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  max-height: 195px;
+}
+
+.ete-layer-item {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 4px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: var(--cursor-grab);
+    user-select: none;
+    transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.ete-layer-item:hover { background: var(--sts-highlight); }
+
+.ete-layer-item:active {
+  cursor: var(--cursor-grab-down);
+}
+
+.ete-layer-item.is-selected {
+  background: var(--sts-control-background);
+}
+
+.ete-layer-item.is-dragging {
+  opacity: 0.45;
+}
+
+.ete-layer-item.is-drop-target {
+  background: var(--sts-highlight);
+  box-shadow: inset 0 0 0 1px var(--sts-gold);
+}
+
+.ete-layer-item.is-hidden .ete-layer-thumb,
+.ete-layer-item.is-hidden .ete-layer-label {
+  opacity: 0.4;
+}
+
+.ete-layer-thumb {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  background: var(--sts-canvas-backdrop);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+/* The palette link mark between a layer's thumbnail and label: a green chain on a layer that follows the colour
+ * panel's palette, which a click rasterizes, or a gold broken chain on a plain image the palette can't change. */
+.ete-layer-link {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  width: 12px;
+  text-align: center;
+  pointer-events: auto;
+  cursor: help;
+}
+.ete-layer-link.is-linked { color: #7fbf7a; }
+.ete-layer-link.is-broken { color: var(--sts-gold); }
+
+.ete-layer-label {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--sts-text);
+  letter-spacing: 0.02em;
+  font-weight: 600;
+  /* Double-clicking the label renames the layer, so it takes pointer events. */
+  pointer-events: auto;
+  cursor: var(--cursor-text);
+  user-select: none;
+}
+.ete-layer-rename {
+  flex: 0 1 auto;
+  min-width: 80px;
+  max-width: 160px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 4px;
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--sts-text-bright);
+  outline: none;
+}
+
+.ete-layer-spacer {
+  flex: 1 1 auto;
+}
+
+.ete-layer-btn {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  font-size: 10px;
+  cursor: var(--cursor-pointer);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.75;
+  transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.ete-layer-item:hover .ete-layer-btn,
+.ete-layer-item.is-selected .ete-layer-btn,
+.ete-layer-btn:focus { opacity: 1; }
+
+.ete-layer-btn:hover {
+  background: transparent;
+  color: var(--sts-text-bright);
+}
+
+.ete-layer-btn:last-child:hover {
+  color: var(--sts-rust-bright);
+}
+
+
+.ete-layer-empty {
+  font-size: 9.5px;
+  color: var(--sts-text-muted);
+  font-style: italic;
+  opacity: 0.7;
+  padding: 3px 4px;
+}
+
+.ete-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 16px 11px;
+  background: transparent;
+  border: none;
+}
+
+.ete-footer-acts {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.emblem-rpg-studio .ete-footer .sts-btn {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  height: 18px;
+  min-height: 18px;
+  color: var(--sts-text);
+}
+
+/* As specific as the footer's button rule above (three classes), so the Save colour applies. */
+.emblem-rpg-studio .ete-footer .ete-save { color: var(--sts-gold-bright); }
+.emblem-rpg-studio .ete-footer .ete-save:hover:not(:disabled) { color: var(--sts-gold-bright); }
+
+/* ---------- Overlays (grid + cutoff + scale preview) ----------
+ * The design aids the toolbar turns on and off: gridlines, the bar guide and the scale preview. The overlay code shows
+ * and hides them with an inline display. */
+
+.ete-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.ete-grid-lines {
+  position: absolute;
+  inset: 0;
+  /* The gridline overlay (overlays/design-guides.mjs) sets the background inline, for 4, 2 or 1-pixel cells. */
+}
+
+/* The red centre crosshair, shown with the gridlines except on a spritesheet. Each line straddles the 50% mark, so a
+ * centred sprite lines up with it. */
+.ete-grid-center-v {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-0.5px);
+  background: rgba(255, 40, 40, 0.85);
+  pointer-events: none;
+}
+.ete-grid-center-h {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-0.5px);
+  background: rgba(255, 40, 40, 0.85);
+  pointer-events: none;
+}
+
+.ete-grid-cutoff {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed red;
+  box-shadow: 0 0 6px rgba(255, 90, 0, 1);
+  pointer-events: auto;
+  cursor: help;
+  z-index: 2;
+}
+
+.ete-grid-cutoff-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: linear-gradient(to bottom, rgba(255, 90, 12, 0.28), rgba(255, 10, 12, 0.01));
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ete-projection-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: center center;
+  transform: scale(1);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 6;
+  transition: opacity 0.12s ease;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.ete-projection-control {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  background: rgba(36, 33, 45, 0.82);
+  border: none;
+  border-radius: 3px;
+  z-index: 21;
+  pointer-events: auto;
+  font-size: 11px;
+  font-family: inherit;
+  user-select: none;
+}
+
+/* The zoom level, top left of the canvas, since the Scale Preview control sits top centre. The scale preview overlay
+ * (overlays/token-preview.mjs) keeps it up to date. */
+.ete-zoom-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.55);
+  border: none;
+  border-radius: 2px;
+  font-family: monospace;
+  font-size: 9px;
+  font-weight: 600;
+  color: #3a3648;
+  pointer-events: none;
+  user-select: none;
+  z-index: 20;
+}
+
+.ete-projection-label {
+  font-weight: 600;
+  color: var(--sts-text);
+  letter-spacing: 0.02em;
+}
+
+.ete-projection-value {
+  min-width: 36px;
+  text-align: right;
+  color: var(--sts-gold-bright);
+  font-weight: 600;
+}
+
+/* The pulsing tone highlight the Recolour panel draws over the canvas (overlays/tone-highlight.mjs). The pulse
+ * animates opacity only, so it never redraws the layer's pixels. */
+.ete-tone-hi {
+  image-rendering: pixelated;
+  opacity: 0;
+}
+.ete-tone-hi.is-pulsing {
+  animation: ete-tone-pulse 0.95s ease-in-out infinite alternate;
+}
+/* The pulse runs between half and full opacity, so at its peak the tone's pixels show as solid highlight colour, and
+ * they never fade out of sight. */
+@keyframes ete-tone-pulse {
+  from { opacity: 0.5; }
+  to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ete-tone-hi.is-pulsing { animation: none; opacity: 0.9; }
+}
+
+/* ===========================================================
+ * Pixel-art canvas
+ * A canvas is 128 pixels square, larger on a spritesheet, and is drawn nearest-neighbour on screen. The mouse wheel
+ * zooms it with a CSS transform.
+ * =========================================================== */
+.ete-canvas-host .ete-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background: rgba(0, 0, 0, 0.1);
+  border: none;
+}
+
+/* ===========================================================
+ * Pixel tool column
+ * The column is a layout sibling of the canvas, splitter and layers, so it spans the full working height. Its groups
+ * stay a tight cluster on the vertical centre.
+ * =========================================================== */
+.ete-canvas-area {
+  position: relative;
+  /* Takes the height left after the splitter and layers, and at least 412px, so more layers or an open panel can't
+   * shrink the canvas. On a short screen Character Studio drops that floor (character-studio.css). */
+  flex: 1 1 auto;
+  min-height: 412px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sts-field-background);
+  border-radius: 4px;
+  /* Clips the canvas mount, which is sized in code, if it is ever larger than the area. */
+  overflow: hidden;
+}
+.ete-tools {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* `safe` keeps the first tools reachable when the column is taller than the pane. Plain centring would push them
+   * above the area that scrolls. */
+  justify-content: center;
+  justify-content: safe center;
+  gap: 3px;
+  padding: 2px 4px 2px 1px;
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+}
+.ete-tools::-webkit-scrollbar { display: none; }
+.ete-tool-btn {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  cursor: var(--cursor-pointer);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  padding: 0;
+  transition: color 80ms ease;
+}
+.ete-tool-btn:hover { color: var(--sts-text); background: transparent; }
+.ete-tool-btn.is-active {
+  color: var(--sts-red-bright);
+  background: transparent;
+}
+.ete-tool-btn i { font-size: 11px; }
+/* Group separators grow a little, up to a cap, so the column stays a tight cluster on the vertical centre instead of
+ * stretching to the full height. */
+.ete-tool-spacer {
+  flex: 1 1 auto;
+  min-height: 7px;
+  max-height: 13px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ete-tool-spacer::after {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.09);
+}
+.ete-tool-cut:hover { color: var(--sts-rust-bright); }
+
+/* The brush colour button under the brush tool. It shows the brush colour, or a checkerboard for the eraser. A click
+ * opens the colour picker, and a right-click on the canvas with a colour-picking tool takes the colour under the
+ * cursor. */
+.ete-tool-brush-color {
+  padding: 0;
+}
+.ete-tool-swatch-inner {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  margin: 0 auto;
+}
+.ete-tool-swatch-inner.is-eraser {
+  background:
+    conic-gradient(#8e8aa0 25%, #5f5c70 0 50%, #8e8aa0 0 75%, #5f5c70 0) 0 0 / 6px 6px;
+}
+
+/* The brush preview: the pixel under the cursor, showing what the brush will paint. It is drawn in its own SVG over
+ * the canvas, and overlays/brush-preview.mjs gives the SVG the canvas's transform. */
+.ete-brush-preview-svg {
+  pointer-events: none;
+}
+.ete-brush-preview-rect {
+  paint-order: stroke fill;
+}

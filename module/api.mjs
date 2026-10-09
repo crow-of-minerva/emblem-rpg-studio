@@ -1,90 +1,76 @@
-// @ts-check
-/** @layer studio */
+/*
+ * The module API, published as `game.modules.get('emblem-rpg-studio').api` at init. Each member is the entry point
+ * the system calls to open one tool or to ask one question; the tools themselves live in their own folders.
+ */
 import { EmblemCharacterStudio } from './character/character-studio.mjs';
 import { EmblemSpriteStudio } from './sprite/sprite-studio.mjs';
-import { seedCompositionsFromDefault } from './character/variants.mjs';
-import { runSceneCrop } from './editor/scene-crop.mjs';
-import { createStudioNotifier } from './foundry/notify.mjs';
-import { slugifyHyphen } from './utils/string.mjs';
-import { MODULE_ID } from './constants.mjs';
+import { seedCompositionsFromDefault } from './character/model/composition-keys.mjs';
+import { openSceneCrop } from './scene-crop/scene-crop.mjs';
+import { ART_FLAGS, MODULE_ID } from './constants.mjs';
 
 /* -------------------------------------------- */
-/*  Reporting                                   */
+/*  Version and Records                         */
 /* -------------------------------------------- */
-const notify = createStudioNotifier(import.meta.url);
+
+/**
+ * This API's version, published as `api.version`. Major goes up when a member is removed or renamed or changes what
+ * it takes or means, including a field of StudioDestination; minor goes up when one is added.
+ * @type {Readonly<{major: number, minor: number}>}
+ */
+export const STUDIO_API_VERSION = Object.freeze({ major: 1, minor: 0 });
+
+/**
+ * One of an actor's token-art destinations, which `openCharacterStudio` opens a tab on. Studio finds the class tab by
+ * `tabId`, or by name when it is null. It finds the entry by `entryId` when there is one, otherwise by `entryIndex`
+ * while the entry there still has the name `entry`, otherwise by the first entry with that name.
+ * @typedef {object} StudioDestination
+ * @property {string} classKey          The class tab's name as `system.art.tabs` stores it, or 'Default' for the
+ *                                      base token.
+ * @property {string|null} tabId        The class tab's id, or null for the base token.
+ * @property {string} entry             The conditional entry's name, or '' for the class tab's own art.
+ * @property {number|null} entryIndex   The entry's position in the class tab's entries, or null for none.
+ * @property {string} [entryId]         The entry's id, where it has one.
+ * @property {string} type              A key of the system's token-art slots (`api.character.art.slots`). The base
+ *                                      token takes only 'default'.
+ */
 
 /* -------------------------------------------- */
 /*  Studio API                                  */
 /* -------------------------------------------- */
 
 /**
- * Open Character Studio, on one of an actor's art destinations when an actor is given. The system's
- * `openStudioForSlot` (external/studio/character-art.mjs) calls it from the Actor Control Panel and the container
- * sheets, and the scene control button calls it with no actor.
+ * Open Character Studio: on one of an actor's art destinations when an actor is given, or with no actor loaded.
  * @param {Actor|null} [actor]
- * @param {object|null} [tuple] The class, entry and type to open a tab on.
+ * @param {StudioDestination|null} [destination]  The destination to open a tab on.
  * @returns {Promise<EmblemCharacterStudio|null>} null if the user or the actor is refused.
  */
-export function openCharacterStudio(actor = null, tuple = null) {
-  if (actor) return EmblemCharacterStudio.openForField(actor, tuple);
+export function openCharacterStudio(actor = null, destination = null) {
+  if (actor) return EmblemCharacterStudio.openForField(actor, destination);
   return EmblemCharacterStudio.open();
 }
 
-/** Open Sprite Studio on an item's image. The system's `openStudioForItem` calls it from item sheets. */
+/** Open Sprite Studio on an item's image. */
 export function openSpriteStudio(item) {
   return EmblemSpriteStudio.open(item);
 }
 
 /**
- * The actor update that copies the default token compositions to a new class tab. The system's
- * `studioClassSeedUpdate` asks for it, and the Actor Control Panel saves it along with the new tab.
+ * The actor update that copies the default token compositions (the `tokenComp` flag) to a new class tab, for the
+ * system to save along with the new tab.
  */
 export function getCharacterClassSeed(actor, className) {
-  return seedCompositionsFromDefault(actor?.getFlag?.(MODULE_ID, 'tokenComp'), className, MODULE_ID) ?? {};
+  return seedCompositionsFromDefault(actor?.getFlag?.(MODULE_ID, ART_FLAGS.compositions), className, MODULE_ID) ?? {};
 }
 
 /* -------------------------------------------- */
 
 /**
- * Cut a region out of the scene's art and write it to one of an actor's image fields. The system's
- * `openSceneCropForArtState` calls it from the Object sheet's crop control.
- *
- * The caller supplies the field because the art states belong to the system's schema: the sheet already knows
- * which field the clicked row writes to, so Studio doesn't keep its own copy of that table.
- *
- * The written path gets a cache-busting suffix, because a re-cut writes to the same filename and nothing would
- * otherwise notice the change.
- * @param {object} options
- * @param {string} options.actorUuid               Actor whose art is being cut.
- * @param {string} options.target                  Which art state, which names the file and labels the controls.
- * @param {string} options.field                   Document path the saved path is written to.
- * @returns {Promise<string|null>}                 The written value, or null.
+ * The members published as `game.modules.get('emblem-rpg-studio').api` on init (hooks.mjs). Scene Crop's
+ * `openSceneCrop` lives with the tool, in scene-crop/scene-crop.mjs.
  */
-export async function openSceneCrop({ actorUuid, target, field } = {}) {
-  if (!game.user?.isGM) return null;
-  if (!actorUuid || !target || typeof field !== 'string' || !field) return null;
-
-  const actor = await fromUuid(actorUuid);
-  if (actor?.documentName !== 'Actor') {
-    notify.warn('That art state belongs to no actor the Studio can reach.');
-    return null;
-  }
-
-  const slug = slugifyHyphen(actor.name, 'object').toLowerCase();
-  const path = await runSceneCrop({
-    filename: `${slug}-${actor.id}-${target}.png`,
-    label: `${actor.name}: ${target}`
-  });
-  if (!path) return null;
-
-  const src = `${path}?v=${Date.now()}`;
-  await actor.update({ [field]: src });
-  return src;
-}
-
-/** The members published as `game.modules.get('emblem-rpg-studio').api` on init (foundry/hooks.mjs). */
 export function createStudioApi() {
   return Object.freeze({
+    version: STUDIO_API_VERSION,
     openCharacterStudio,
     openSpriteStudio,
     openSceneCrop,

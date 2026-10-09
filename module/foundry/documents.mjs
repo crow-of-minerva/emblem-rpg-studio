@@ -1,7 +1,13 @@
-/** @layer foundry */
+/*
+ * Small document helpers the tools share: reading a drop on a window, telling a world Actor apart, an update that
+ * throws when the write was refused, the update that marks an item's saved pixel art, and a chat card only the
+ * current user sees.
+ */
 
+import { STUDIO_REFUSALS, StudioRefusal } from '../access-rules.mjs';
 import { SYSTEM_ID } from '../constants.mjs';
 import { createStudioNotifier } from './notify.mjs';
+import { systemBusy } from './system-bridge.mjs';
 
 /* -------------------------------------------- */
 /*  Reporting                                   */
@@ -9,30 +15,13 @@ import { createStudioNotifier } from './notify.mjs';
 const notify = createStudioNotifier(import.meta.url);
 
 /**
- * Read a drag payload through Foundry's `TextEditor.getDragEventData`. Character Studio's drop listener calls it.
- * On v14 that helper returns `{}` for a payload it can't parse, so the raw parse below runs only if the helper is
- * missing or throws.
+ * Read a drag payload through Foundry's `TextEditor.getDragEventData`: the parsed text/plain data, or `{}` when the
+ * drop carries nothing Foundry can parse.
  * @param {DragEvent} event           The drag or drop event.
- * @returns {object|null}
+ * @returns {object}
  */
 export function readDropPayload(event) {
-  try {
-    const helper = foundry.applications?.ux?.TextEditor?.implementation?.getDragEventData
-      ?? foundry.applications?.ux?.TextEditor?.getDragEventData;
-    const out = helper?.(event);
-    if (out) return out;
-  } catch (diagnosticError) {
-    notify.probe('readDropPayload probe', diagnosticError);
-  }
-  let raw = '';
-  for (const mime of ['text/plain', 'application/json']) {
-    raw = event.dataTransfer?.getData(mime) ?? '';
-    if (raw) break;
-  }
-  try { return JSON.parse(raw); } catch (diagnosticError) {
-    notify.probe('readDropPayload probe', diagnosticError);
-    return null;
-  }
+  return foundry.applications.ux.TextEditor.implementation.getDragEventData(event);
 }
 
 /* -------------------------------------------- */
@@ -47,8 +36,8 @@ export async function actorFromDropPayload(data) {
   if (!data) return null;
   if (data.uuid) {
     let doc;
-    try { doc = await foundry.utils.fromUuid(data.uuid); } catch (diagnosticError) {
-      notify.failure('actorFromDropPayload failed', diagnosticError);
+    try { doc = await foundry.utils.fromUuid(data.uuid); } catch (error) {
+      notify.failure('The dropped document could not be found.', error);
       doc = null;
     }
     switch (doc?.documentName) {
@@ -74,6 +63,42 @@ export function isWorldActor(actor) {
 }
 
 /* -------------------------------------------- */
+/*  Checked Updates                             */
+/* -------------------------------------------- */
+
+/**
+ * Update a document and throw when the write was refused. Foundry resolves an update refused in `_preUpdate` or a
+ * pre-update hook to undefined, as it does one that changes nothing, so undefined passes only when the document
+ * already holds every value written. A refusal while the host client runs a command throws a StudioRefusal.
+ * @param {foundry.abstract.Document} document    The document to update.
+ * @param {object} changes                        Flat update keys.
+ * @param {object} [options]                      Update options.
+ * @returns {Promise<foundry.abstract.Document|undefined>}   The updated document, or undefined when nothing changed.
+ * @throws {StudioRefusal|Error} When the update was refused.
+ */
+export async function updateChecked(document, changes, options) {
+  const updated = await document.update(changes, options);
+  if (updated !== undefined || documentHolds(document, changes)) return updated;
+  if (systemBusy()) throw new StudioRefusal(STUDIO_REFUSALS.PROCESSING);
+  throw new Error(`The update to ${document.name} was refused.`);
+}
+
+/**
+ * Whether a document already holds every value an update would write, a forced deletion meaning no value at all.
+ * @param {foundry.abstract.Document} document
+ * @param {object} changes                        Flat update keys.
+ * @returns {boolean}
+ */
+function documentHolds(document, changes) {
+  const { ForcedDeletion } = foundry.data.operators;
+  return Object.entries(changes).every(([key, value]) => {
+    const stored = foundry.utils.getProperty(document, key);
+    if (value instanceof ForcedDeletion) return stored === undefined;
+    return foundry.utils.equals(stored, value);
+  });
+}
+
+/* -------------------------------------------- */
 /*  Saved Art                                   */
 /* -------------------------------------------- */
 
@@ -94,8 +119,8 @@ export function savedPixelArtUpdate(path) {
 /* -------------------------------------------- */
 
 /**
- * Post a chat card that only the current user can see, such as the naming guide (fecc-naming-guide.mjs). It's
- * whispered to the user, so it lands in their own chat log without reaching the rest of the table.
+ * Post a chat card that only the current user can see, such as the naming guide (character/panels/naming-guide.mjs).
+ * It's whispered to the user, so it lands in their own chat log without reaching the rest of the table.
  * @param {string} content            Card markup.
  * @returns {Promise<ChatMessage>}
  */

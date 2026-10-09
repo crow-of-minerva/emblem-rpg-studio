@@ -1,0 +1,37 @@
+{{!-- One tab's pane: the avatar and token panes between their side rails. The window renders it when it first builds
+     the tab, then mounts a canvas view in each .ete-canvas-mount and builds the side panels into the rails. --}}
+<div class="ete-panes">
+  {{> "modules/emblem-rpg-studio/templates/character-studio/side-rail.hbs" avatarRail}}
+
+  <section class="ete-pane" data-side="avatar">
+    <header class="ete-pane-header"><i class="fas fa-image-portrait"></i><span>Avatar</span></header>
+    {{> "modules/emblem-rpg-studio/templates/character-studio/pane-toolbar.hbs" avatarToolbar}}
+    <div class="ete-pane-work">
+      {{> "modules/emblem-rpg-studio/templates/editor/tool-rail.hbs" layerTools=true}}
+      <div class="ete-work-col">
+        <div class="ete-canvas-area">
+          <div class="ete-canvas-mount"></div>
+        </div>
+        <div class="ete-layers-splitter" data-tooltip="Drag to resize the layer list"></div>
+        <div class="ete-layers"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ete-pane" data-side="token">
+    <header class="ete-pane-header"><i class="fas fa-circle-user"></i><span>Token</span></header>
+    {{> "modules/emblem-rpg-studio/templates/character-studio/pane-toolbar.hbs" tokenToolbar}}
+    <div class="ete-pane-work">
+      {{> "modules/emblem-rpg-studio/templates/editor/tool-rail.hbs" layerTools=true}}
+      <div class="ete-work-col">
+        <div class="ete-canvas-area">
+          <div class="ete-canvas-mount"></div>
+        </div>
+        <div class="ete-layers-splitter" data-tooltip="Drag to resize the layer list"></div>
+        <div class="ete-layers"></div>
+      </div>
+    </div>
+  </section>
+
+  {{> "modules/emblem-rpg-studio/templates/character-studio/side-rail.hbs" tokenRail}}
+</div>

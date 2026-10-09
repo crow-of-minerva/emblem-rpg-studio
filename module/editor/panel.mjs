@@ -1,18 +1,6 @@
-/** @layer editor */
-
-import { createStudioNotifier } from '../foundry/notify.mjs';
-
-/* -------------------------------------------- */
-/*  Reporting                                   */
-/* -------------------------------------------- */
-const notify = createStudioNotifier(import.meta.url);
 /**
- * The base for Studio's side panels, which are plain DOM rather than Foundry applications: FeccColourPanel,
- * FeccExportPanel, FeccImportPanel and FeccPartsLibrary (character/fecc/). Character Studio hosts all four, and
- * Sprite Studio hosts the colour panel.
- *
- * A panel has a root element, a `_render` that fills it, and a `destroy` that empties it. The host window owns
- * everything else, including where the root sits in the page. A panel given no root builds its own.
+ * The base for Studio's side panels, which are plain DOM rather than Foundry applications. A panel has a root
+ * element, built here when none is given, a `_render` that fills it and a `destroy` that empties it.
  */
 export class Panel {
   /* -------------------------------------------- */
@@ -60,8 +48,6 @@ export class Panel {
    */
   destroy() {
     this._destroyed = true;
-    try { this.root.replaceChildren(); } catch (_) {
-      notify.failure('destroy failed', _);
-    }
+    this.root.replaceChildren();
   }
 }

@@ -1,4 +1,6 @@
-/** @layer utils */
+/*
+ * Clamping a number that may come from a stored field or a form input.
+ */
 
 /** Hold a number inside a range. No coercion and no validation: `NaN` in, `NaN` out. */
 function clamp(n, lo, hi) {

@@ -1,0 +1,5 @@
+{{!-- The class row strip: a button per class, and one per variant type of a class that has art or an open tab. --}}
+{{#each rows}}
+<button type="button" class="ets-class-tab{{#if active}} is-active{{/if}}" data-action="selectClass"
+  data-class-key="{{classKey}}" data-type-key="{{type}}">{{label}}</button>
+{{/each}}

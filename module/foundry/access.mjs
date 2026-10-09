@@ -1,9 +1,13 @@
-/** @layer foundry */
+/*
+ * The access rules in access-rules.mjs applied on this client: reading the saved allowlist, what the signed-in user or
+ * another user may do in Studio, the warning shown on a refusal, and telling open windows when access changes.
+ */
+
 import { MODULE_ID, STUDIO_ACCESS_HOOK, TRUSTED_ALLOWLIST_SETTING } from '../constants.mjs';
 import {
   STUDIO_ACCESS, STUDIO_REFUSALS, canManageAllowlist, normalizeAllowlist, refusalMessage, resolveActorArtAccess,
   resolveItemArtAccess, resolveStudioAccess
-} from '../admission.mjs';
+} from '../access-rules.mjs';
 import { createStudioNotifier } from './notify.mjs';
 
 /* -------------------------------------------- */
@@ -16,20 +20,32 @@ const notify = createStudioNotifier(import.meta.url);
 /* -------------------------------------------- */
 
 /**
- * The stored allowlist, reduced to well-formed ids.
- *
- * The list counts only if the Gamemaster saved it last: Foundry's server records who last changed a setting
- * (`_stats.lastModifiedBy`), and an Assistant GM could skip vetoAllowlistWrite, for example with `noHook`. Otherwise
- * it reads as empty, as it does while the setting is not registered yet, so an early reader is refused.
+ * Whether this client has already logged that the allowlist has no recorded writer, so the error shows once.
+ * @type {boolean}
+ */
+let unattributedAllowlistLogged = false;
+
+/* -------------------------------------------- */
+
+/**
+ * The stored allowlist's well-formed ids, counted only if the GM saved it last (`_stats.lastModifiedBy`), since an
+ * Assistant GM could skip vetoAllowlistWrite with `noHook`. Otherwise, and before the setting is registered, it reads
+ * as empty; a list of ids with no recorded writer also logs one console error.
  * @returns {readonly string[]}
  */
 export function readTrustedAllowlist() {
   try {
     const setting = game.settings.get(MODULE_ID, TRUSTED_ALLOWLIST_SETTING, { document: true });
-    const writer = game.users?.get?.(setting?._stats?.lastModifiedBy ?? '');
+    const writerId = setting?._stats?.lastModifiedBy;
+    if (!writerId && !unattributedAllowlistLogged && normalizeAllowlist(setting?.value).length) {
+      unattributedAllowlistLogged = true;
+      notify.failure("Studio can't tell who saved the Trusted Player list, so it is ignored.", null, { toast: false });
+    }
+    const writer = game.users?.get?.(writerId ?? '');
     return normalizeAllowlist(canManageAllowlist(writer) ? setting.value : []);
-  } catch (diagnosticError) {
-    notify.probe('Read the Studio allowlist', diagnosticError, globalThis.game?.ready !== true);
+  } catch (error) {
+    notify.probe('The Trusted Player list could not be read, so no Trusted player has Studio access.', error,
+      globalThis.game?.ready !== true);
     return normalizeAllowlist([]);
   }
 }
@@ -111,12 +127,12 @@ export function hasStudioToolAccess(user = game.user) {
 /* -------------------------------------------- */
 
 /**
- * Whether a user, by default the signed-in one, is Studio staff: the Gamemaster or an Assistant GM.
+ * Whether a user, by default the signed-in one, is the Gamemaster or an Assistant GM.
  * @param {User} [user]
  * @returns {boolean}
  */
-export function isStudioStaff(user = game.user) {
-  return studioAccessFor(user).access === STUDIO_ACCESS.STAFF;
+export function isStudioGm(user = game.user) {
+  return studioAccessFor(user).access === STUDIO_ACCESS.GM;
 }
 
 /* -------------------------------------------- */
@@ -137,9 +153,8 @@ export function refuseStudio(code, detail = '') {
 /* -------------------------------------------- */
 
 /**
- * Refuse a write of the allowlist from anyone but the Gamemaster. Registered on `preCreateSetting` and
- * `preUpdateSetting` in foundry/hooks.mjs. Foundry lets Assistant GMs change world settings, so this local check
- * keeps the list in the Gamemaster's hands. The host still rechecks the list on every save it handles.
+ * Refuse a write of the allowlist from anyone but the GM, on `preCreateSetting` and `preUpdateSetting`, because
+ * Foundry lets Assistant GMs change world settings. The host still checks the list again on every save it handles.
  * @param {Setting} document        The Setting being created or updated.
  * @returns {false|void}
  */
@@ -161,15 +176,15 @@ export function announceStudioAccessChange() {
   Hooks.callAll(STUDIO_ACCESS_HOOK, studioAccessFor());
   try {
     globalThis.ui?.controls?.render?.({ reset: true });
-  } catch (diagnosticError) {
-    notify.failure('Refresh the Studio scene control', diagnosticError);
+  } catch (error) {
+    notify.failure('The Studio button in the scene controls could not be refreshed.', error);
   }
 }
 
 /* -------------------------------------------- */
 
 /**
- * Announce a change of the signed-in user's own role. Registered on `updateUser` in foundry/hooks.mjs.
+ * Announce a change of the signed-in user's own role. Registered on `updateUser` in hooks.mjs.
  * @param {User} user               The updated user.
  * @param {object} changes          The changed data.
  */

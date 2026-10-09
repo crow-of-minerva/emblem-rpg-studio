@@ -1,0 +1,1033 @@
+/* Side panels (fecc-*): the rail, Parts, Colour, Recolour, Import and its sorting dialog, Export, Prefabs.
+ * Sprite Studio uses the rail and the Recolour panel too. */
+
+/* ===========================================================
+ * Side panel rail and trays
+ * The rail of tab buttons sits on the window background; only an open tray's body is drawn as a panel.
+ * =========================================================== */
+
+.fecc-side {
+  --fecc-rail-width: 40px;
+  --fecc-body-width: 240px;
+  display: flex;
+  flex-direction: row;
+  gap: var(--sts-gap);
+  background: transparent;
+  border: none;
+  flex: 0 0 var(--fecc-rail-width);
+  min-width: var(--fecc-rail-width);
+  max-width: var(--fecc-rail-width);
+  overflow: hidden;
+  transition: flex-basis 140ms ease, max-width 140ms ease;
+}
+.fecc-side.is-expanded {
+  flex: 0 0 calc(var(--fecc-rail-width) + var(--fecc-body-width) + var(--sts-gap));
+  max-width: calc(var(--fecc-rail-width) + var(--fecc-body-width) + var(--sts-gap));
+}
+.fecc-side-right {
+  border: none;
+  flex-direction: row-reverse;
+}
+
+.fecc-rail {
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: none;
+  width: var(--fecc-rail-width);
+  flex: 0 0 var(--fecc-rail-width);
+  align-items: center;
+  padding: 11px 0;
+  gap: 10px;
+}
+
+.fecc-rail-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  font-size: 6.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.05;
+  cursor: var(--cursor-pointer);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  /* Each rail tab keeps a minimum height, so the labels never overlap. */
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  transition: color 80ms ease;
+}
+.fecc-rail-tab:hover { color: var(--sts-text); background: transparent; }
+.fecc-rail-tab.is-active {
+  color: var(--sts-red-bright);
+  background: transparent;
+}
+.fecc-rail-tab i { font-size: 13px; line-height: 1; }
+.fecc-rail-tab span {
+  font-size: 6.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.fecc-side-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--sts-panel-background);
+  border-radius: 6px;
+  box-shadow: var(--sts-panel-shadow);
+  padding: 11px 13px;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.fecc-side-pane {
+  display: none;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* !important, so a panel's own display rule can't show an inactive pane. */
+.fecc-side-pane:not(.is-active) { display: none !important; }
+.fecc-side-pane.is-active        { display: flex !important; }
+
+/* The canvas's highlight while a part is dragged over it. */
+.fecc-drop-hot {
+  background: var(--sts-highlight);
+  box-shadow: inset 0 0 0 1px var(--sts-gold);
+}
+
+/* ---------- Parts panel internals ----------
+ * Don't set `display` on the panel classes: `.fecc-side-pane` shows and hides the panes, and a `display: flex` here
+ * would show an inactive one.
+ */
+
+.fecc-parts-panel {
+  flex-direction: column;
+}
+
+.fecc-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  margin: 0 0 9px;
+  background: transparent;
+  border: none;
+  font-weight: 600;
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--sts-panel-title);
+  flex: 0 0 auto;
+}
+.fecc-panel-header i { color: var(--sts-panel-title); opacity: 0.85; font-size: 11px; }
+.fecc-panel-spacer { flex: 1 1 auto; }
+.fecc-layout-toggle { min-width: 30px; }
+
+.fecc-panel-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0 0 8px;
+  border: none;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.fecc-tab {
+  appearance: none;
+  background: var(--sts-tab-background);
+  color: var(--sts-text-muted);
+  border: none;
+  box-shadow: none;
+  padding: 2px 9px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border-radius: 3px;
+  cursor: var(--cursor-pointer);
+  transition: background 80ms ease, color 80ms ease;
+}
+.fecc-tab:hover  { color: var(--sts-text); background: var(--sts-highlight); }
+.fecc-tab.is-active {
+  color: var(--sts-text-bright);
+  font-weight: 700;
+  background: var(--sts-control-background);
+  box-shadow: var(--sts-chip-shadow);
+}
+
+/* The + button that adds a sub-tab, dimmed so it reads as a control rather than a tab. It is never shown as active. */
+.fecc-tab-add {
+  background: transparent;
+  padding: 2px 6px;
+  font-weight: 700;
+  color: var(--sts-text-muted);
+  opacity: 0.85;
+}
+.fecc-tab-add:hover { opacity: 1; color: var(--sts-text); background: transparent; }
+
+.fecc-panel-search {
+  padding: 0 0 8px;
+  border: none;
+  flex: 0 0 auto;
+}
+.fecc-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  color: var(--sts-text);
+  padding: 0 8px;
+  height: 21px;
+  min-height: 21px;
+  font-size: 11px;
+  outline: none;
+}
+
+.fecc-panel-grid {
+  --fecc-columns: 2;
+  --fecc-thumb-min-height: 96px;
+  display: grid;
+  grid-template-columns: repeat(var(--fecc-columns), minmax(0, 1fr));
+  gap: 5px;
+  padding: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  box-sizing: border-box;
+}
+.fecc-panel-grid::-webkit-scrollbar { width: 6px; }
+.fecc-panel-grid::-webkit-scrollbar-thumb { background: var(--sts-control-background); border-radius: 3px; }
+
+.fecc-thumb {
+  appearance: none;
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 3px;
+  padding: 0;
+  cursor: var(--cursor-pointer);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  box-sizing: border-box;
+  box-shadow: none;
+  transition: background 80ms ease, box-shadow 80ms ease;
+}
+.fecc-thumb:hover {
+  background: var(--sts-highlight);
+  box-shadow: inset 0 0 0 1px var(--sts-gold);
+}
+
+/* Square wrapper for the thumbnail image. */
+.fecc-thumb-img {
+  position: relative;
+  width: 100%;
+  padding-bottom: 100%;
+  background: none;
+  box-shadow: none;
+  overflow: hidden;
+}
+.fecc-thumb-img canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  display: block;
+}
+
+/* The thumbnails' minimum height follows the column count, so at 3 and 4 columns the rows stay no taller than the
+ * narrower square cells. */
+.fecc-panel-grid[data-cols="2"]        { --fecc-thumb-min-height: 96px; }
+.fecc-panel-grid[data-cols="3"]        { --fecc-thumb-min-height: 64px; }
+.fecc-panel-grid[data-cols="4"]        { --fecc-thumb-min-height: 48px; }
+.fecc-panel-grid > button.fecc-thumb   { min-height: var(--fecc-thumb-min-height); }
+
+.fecc-empty {
+  padding: 16px;
+  color: var(--sts-text-muted);
+  font-size: 10.5px;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ---------- Colour panel internals ---------- */
+
+.fecc-colour-panel {
+  flex-direction: column;
+  padding: 0;
+  gap: 2px;
+  border: 0;
+  min-height: 0;
+  overflow-y: hidden;
+}
+/* Rows hold their height so the prefab picker below them takes all the slack. */
+.fecc-colour-panel > * { flex: 0 0 auto; }
+.fecc-colour-panel > .fecc-presets-section { flex: 1 1 auto; }
+.fecc-colour-row {
+  display: grid;
+  grid-template-columns: 50px 1fr 18px 18px 18px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--sts-card-background);
+  box-shadow: var(--sts-card-shadow);
+}
+.fecc-colour-name {
+  font-size: 10.5px;
+  color: var(--sts-text);
+  font-weight: 600;
+}
+.fecc-colour-shades {
+  display: flex;
+  gap: 2px;
+}
+.fecc-swatch {
+  flex: 1 1 auto;
+  height: 20px;
+  border: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+  cursor: var(--cursor-pointer);
+  padding: 0;
+}
+.fecc-swatch.is-base { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--sts-gold); }
+
+/* Unused shades all show one ghost tone, with no inline colour, so an unused shade never looks like a colour the
+ * sprite uses. A click enables one. A chip the layer type has no code for (is-lut-dead, such as the neutral chip on a
+ * wild-card row) and a recolour target locked by the selection stay inert. */
+.fecc-swatch.is-inactive {
+  cursor: var(--cursor-pointer);
+  background: rgba(255, 255, 255, 0.08);
+}
+.fecc-swatch.is-inactive.is-lut-dead,
+.fecc-recolour-dst.is-inactive { cursor: not-allowed; }
+.fecc-swatch.is-inactive.is-base {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(216, 179, 106, 0.2);
+}
+
+/* A palette row no pixel uses, or one the layer type can't use, such as hair on a face layer: the row is muted and
+ * ignores the pointer, which also turns off its copy, paste and Prefabs buttons. */
+.fecc-colour-row.is-inactive {
+  opacity: 0.35;
+  pointer-events: none;
+}
+/* A row the layer type uses but no pixel does still takes swatch clicks, which enable a shade. A row the layer type
+ * can't use (is-lut-dead) stays inert. */
+.fecc-colour-row.is-inactive:not(.is-lut-dead):not(.fecc-recolour-row) .fecc-swatch {
+  pointer-events: auto;
+}
+.fecc-colour-row.is-inactive .fecc-colour-name {
+  font-style: italic;
+}
+.fecc-colour-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  font-size: 10px;
+  cursor: var(--cursor-pointer);
+  padding: 4px 0;
+}
+.fecc-colour-btn:hover { color: var(--sts-text); }
+.fecc-colour-btn:disabled {
+  opacity: 0.3;
+  cursor: var(--cursor-default);
+}
+.fecc-colour-btn:disabled:hover { color: var(--sts-text-muted); }
+
+/* ---------- Recolour mode, for layers with no palette link ---------- */
+
+.fecc-recolour-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.fecc-recolour-row {
+  grid-template-columns: 1fr 16px 1fr 18px;
+}
+.fecc-recolour-arrow {
+  color: var(--sts-text-muted);
+  font-size: 10px;
+  text-align: center;
+}
+/* Left swatch is a toggle: click to pulse that tone's pixels on the canvas. */
+.fecc-recolour-src {
+  cursor: var(--cursor-pointer);
+}
+.fecc-recolour-row.is-pulsing .fecc-recolour-src {
+  box-shadow: 0 0 0 2px var(--sts-gold), 0 0 6px rgba(216, 179, 106, 0.7);
+}
+.fecc-recolour-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 5px 7px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--sts-gold-bright);
+  background: var(--sts-highlight);
+  border: none;
+  border-radius: 3px;
+}
+/* Distinct-tone count beside the Recolour title. */
+.fecc-panel-count {
+  margin-left: 5px;
+  padding: 0 5px;
+  font-size: 9px;
+  line-height: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sts-text-muted);
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 7px;
+}
+/* Scroll sentinel that pulls in the next chunk of tone rows. */
+.fecc-recolour-more {
+  flex: 0 0 auto;
+  height: 1px;
+}
+
+/* ---------- Import panel internals ---------- */
+
+.fecc-import-panel {
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--sts-text);
+}
+.fecc-import-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fecc-import-modes .sts-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* The Import panel's naming dialog for a batch: a scrolling list with a thumbnail and a name field per frame. It is a
+ * core DialogV2 window, outside Studio's root class. */
+.fecc-name-list {
+  max-height: 50vh;
+  overflow: auto;
+}
+.fecc-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.fecc-name-thumb {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  image-rendering: pixelated;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+}
+.fecc-name-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---------- Sprite Importer ----------
+ * A core DialogV2 window outside Studio's root class (fecc-sprite-importer.mjs), so these rules are scoped by its
+ * `.emblem-fecc-manual` window class and the `fecc-pz-*` prefix. The image panels sit on the left, where tones are
+ * dragged from, and the palettes on the right, where they are dropped.
+ */
+.emblem-fecc-manual.dialog .window-content {
+  padding: 0;
+  background: var(--sts-window-background);
+  color: var(--sts-text);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.emblem-fecc-manual .dialog-form.standard-form,
+.emblem-fecc-manual .dialog-content.standard-form {
+  padding: 0;
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.emblem-fecc-manual .dialog-content.standard-form > * { margin: 0; }
+.emblem-fecc-manual .form-footer {
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+}
+
+.fecc-pz-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fecc-pz-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  font-size: 10.5px;
+  color: var(--sts-text-muted);
+}
+.fecc-pz-hint { flex: 1 1 auto; }
+.fecc-pz-summary {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  flex: 0 0 auto;
+}
+.fecc-pz-summary.ok   { color: #7fbf7a; }
+.fecc-pz-summary.warn { color: var(--sts-gold-bright); }
+
+.fecc-pz-permanent {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sts-text-muted);
+  cursor: var(--cursor-pointer);
+  white-space: nowrap;
+}
+.fecc-pz-permanent input[type="checkbox"] {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+.fecc-pz-empty {
+  grid-column: 1 / -1;
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--sts-text-muted);
+  background: var(--sts-panel-background);
+  border: none;
+  border-radius: 6px;
+  margin: 12px;
+}
+.fecc-pz-empty i {
+  font-size: 22px;
+  opacity: 0.5;
+}
+
+/* The importer's own buttons: Auto-classify Rest, Reset, Add File and Paste from Clipboard. */
+.fecc-pz-btn {
+  flex: 0 0 auto;
+  padding: 0 11px;
+  height: 21px;
+  min-height: 21px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  background: var(--sts-control-background);
+  color: var(--sts-gold-bright);
+  border: none;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+  cursor: var(--cursor-pointer);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color 80ms ease;
+}
+.fecc-pz-btn:hover {
+  color: #fff;
+}
+.fecc-pz-btn i { font-size: 10px; }
+
+.fecc-pz-layout {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 11px;
+  padding: 2px 13px 13px;
+  box-sizing: border-box;
+}
+
+.fecc-pz-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  margin: 0 0 9px;
+  background: transparent;
+  border: none;
+  font-weight: 600;
+  font-size: 9.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--sts-panel-title);
+}
+.fecc-pz-pane-header i {
+  color: var(--sts-panel-title);
+  opacity: 0.85;
+  font-size: 11px;
+}
+
+/* The tones pane: a scrolling grid of image panels. A tone dragged from any panel is placed in every panel that has
+ * it. */
+.fecc-pz-tones-pane {
+  flex: 1 1 55%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sts-panel-background);
+  border: none;
+  border-radius: 6px;
+  box-shadow: var(--sts-panel-shadow);
+  padding: 11px 13px;
+  box-sizing: border-box;
+}
+/* The importer sets the grid's columns inline from the panel count: one column for 1 or 2 panels, two for 3 or 4,
+ * three for 5 or 6, and four for 7 or more. The panels in a row share its height. */
+.fecc-pz-panels {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: min-content;
+  gap: 6px;
+  align-content: start;
+  background-color: transparent;
+}
+
+.fecc-pz-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--sts-card-background);
+  border: none;
+  border-radius: 4px;
+  box-shadow: var(--sts-card-shadow);
+  overflow: hidden;
+}
+.fecc-pz-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sts-text);
+}
+.fecc-pz-panel-title { letter-spacing: 0.02em; }
+.fecc-pz-panel-spacer { flex: 1 1 auto; }
+.fecc-pz-zoom-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sts-text-muted);
+  min-width: 26px;
+  text-align: center;
+}
+.fecc-pz-mini-btn {
+  appearance: none;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--sts-text-muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: var(--cursor-pointer);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  padding: 0;
+  transition: color 80ms ease;
+}
+.fecc-pz-mini-btn:hover {
+  background: transparent;
+  color: var(--sts-text-bright);
+}
+.fecc-pz-mini-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--sts-text-muted);
+}
+.fecc-pz-mini-btn.fecc-pz-remove:hover {
+  background: transparent;
+  color: var(--sts-rust-bright);
+}
+
+/* Scrollable canvas wrap so zoomed-up sprites still fit the panel. */
+.fecc-pz-panel-canvas-wrap {
+  flex: 0 0 auto;
+  height: 260px;
+  overflow: hidden;
+  position: relative;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    conic-gradient(#322e3f 25%, #2a2735 0 50%, #322e3f 0 75%, #2a2735 0) 0 0 / 14px 14px;
+}
+.fecc-pz-image {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-drag: none;
+  display: block;
+  flex: 0 0 auto;
+}
+.fecc-pz-panel-canvas-wrap.is-panning,
+.fecc-pz-panel-canvas-wrap.is-panning .fecc-pz-image {
+  cursor: var(--cursor-grab-down);
+}
+
+.fecc-pz-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+}
+.fecc-pz-panel-counter {
+  margin-left: auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sts-text-muted);
+}
+
+/* Palettes (drop) pane. */
+.fecc-pz-palettes-pane {
+  flex: 1 1 45%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sts-panel-background);
+  border-radius: 6px;
+  box-shadow: var(--sts-panel-shadow);
+  padding: 11px 13px;
+  box-sizing: border-box;
+}
+.fecc-pz-palettes-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.fecc-pz-box {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  background: var(--sts-card-background);
+  border: none;
+  border-radius: 4px;
+  box-shadow: var(--sts-card-shadow);
+}
+.fecc-pz-box-outline {
+  margin-bottom: 4px;
+  background: var(--sts-highlight);
+}
+.fecc-pz-box-header {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sts-gold);
+  white-space: nowrap;
+}
+.fecc-pz-chips {
+  display: flex;
+  gap: 3px;
+}
+
+.fecc-pz-chip {
+  flex: 1;
+  min-height: 32px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 3px;
+  position: relative;
+}
+.fecc-pz-chip.drop-over {
+  background: var(--sts-highlight);
+  box-shadow: inset 0 0 0 1px var(--sts-gold);
+}
+.fecc-pz-chip-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--sts-text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+.fecc-pz-chip.has-tones .fecc-pz-chip-label { display: none; }
+.fecc-pz-chip-outline {
+  /* The Outline chip is taller than the others, since it often holds many dark tones. */
+  min-height: 40px;
+  justify-content: flex-start;
+}
+
+/* The Remove box: tones dropped here are cut out of the sprite on import. It sits below the palettes and is coloured
+ * as a removal, not as a palette shade. */
+.fecc-pz-box-remove {
+  margin-top: 4px;
+  background: rgba(181, 118, 108, 0.08);
+}
+.fecc-pz-box-remove .fecc-pz-box-header { color: var(--sts-rust-bright); }
+.fecc-pz-chip-remove {
+  min-height: 40px;
+  justify-content: flex-start;
+  /* A checkerboard, for the transparency a tone dropped here becomes. */
+  background:
+    repeating-conic-gradient(rgba(255, 255, 255, 0.07) 0% 25%, transparent 0% 50%) 0 0 / 10px 10px,
+    var(--sts-field-background);
+}
+.fecc-pz-chip-remove.drop-over {
+  background: rgba(181, 118, 108, 0.2);
+  box-shadow: inset 0 0 0 1px var(--sts-rust-bright);
+}
+
+.fecc-pz-tone {
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 1px 1px rgba(0, 0, 0, 0.6);
+  cursor: var(--cursor-pointer);
+  flex: 0 0 auto;
+  display: inline-block;
+}
+.fecc-pz-tone:hover {
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--sts-gold-bright);
+}
+/* A swatch for one patch of a tone, placed with Alt+drag, marked so it reads as a patch rather than a whole tone. */
+.fecc-pz-tone-region {
+  position: relative;
+}
+.fecc-pz-tone-region::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  border-width: 0 6px 6px 0;
+  border-style: solid;
+  border-color: transparent var(--sts-gold) transparent transparent;
+  pointer-events: none;
+}
+/* Spotlighted swatch (clicked to find on the image). */
+.fecc-pz-tone.is-highlight {
+  box-shadow: 0 0 0 2px var(--sts-teal), 0 0 6px rgba(143, 211, 204, 0.9);
+}
+
+/* The tone swatch that follows the cursor during a drag. It is on the document body, so the dialog's overflow doesn't
+ * clip it. */
+.fecc-pz-floater {
+  position: fixed;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--sts-gold), 0 2px 8px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+}
+
+/* ---------- Export panel ---------- */
+
+.fecc-export-panel {
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--sts-text);
+  overflow-y: auto;
+}
+.fecc-export-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--sts-divider);
+}
+.fecc-export-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.fecc-export-hint {
+  font-size: 10px;
+  color: var(--sts-text-muted);
+  line-height: 1.35;
+  margin: 0;
+}
+.fecc-export-hint code {
+  background: var(--sts-field-background);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 10px;
+}
+.fecc-export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fecc-export-options .sts-btn {
+  justify-content: flex-start;
+  text-align: left;
+}
+.fecc-export-status,
+.fecc-import-status {
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--sts-text-muted);
+  word-break: break-all;
+  min-height: 14px;
+}
+/* The status line's tones: done, a warning, and a failure. */
+.fecc-export-status.is-ok,
+.fecc-import-status.is-ok {
+  color: #7cd17c;
+}
+.fecc-import-status.is-warn {
+  color: #cfa56a;
+}
+.fecc-export-status.is-err,
+.fecc-import-status.is-err {
+  color: #ff8c8c;
+}
+
+/* ===========================================================
+ * Prefabs picker: opens at the bottom of the colour panel when a palette row's Prefabs button is clicked.
+ * =========================================================== */
+/* The picker takes every row the panel has left rather than a fixed band: it is the last child of the colour panel, so
+ * growing it is what fills the window. */
+.fecc-presets-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 5px;
+  border: none;
+  background: var(--sts-card-background);
+  border-radius: 4px;
+  box-shadow: var(--sts-card-shadow);
+  flex: 1 1 auto;
+  min-height: 96px;
+  overflow-y: hidden;
+}
+.fecc-presets-header { flex: 0 0 auto; }
+.fecc-presets-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--sts-panel-title);
+  border: none;
+}
+.fecc-presets-header i { color: var(--sts-panel-title); opacity: 0.85; }
+.fecc-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 0 6px 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.fecc-preset-group {
+  grid-column: 1 / -1;
+  padding: 6px 2px 3px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sts-text-muted);
+  border: none;
+}
+.fecc-preset-group:first-child { padding-top: 1px; }
+.fecc-preset-card {
+  appearance: none;
+  background: var(--sts-field-background);
+  border: none;
+  border-radius: 3px;
+  box-shadow: none;
+  padding: 3px;
+  cursor: var(--cursor-pointer);
+  display: flex;
+  gap: 2px;
+  align-items: stretch;
+  height: 24px;
+  transition: box-shadow 80ms ease, background 80ms ease;
+}
+.fecc-preset-card:hover {
+  background: var(--sts-highlight);
+  box-shadow: inset 0 0 0 1px var(--sts-gold);
+}
+.fecc-preset-swatch {
+  flex: 1 1 0;
+  display: block;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.45);
+  min-width: 8px;
+}

@@ -1,9 +1,16 @@
-// @ts-check
-/** @layer studio */
+/*
+ * Saving a file through the host client for a user who can't upload it: a Trusted player, or an Assistant GM without
+ * Upload Files. Every client loads this file. Its host side answers only on the host client, where it checks the
+ * sender, the target and the bytes on arrival and again just before writing; its client side sends one request at a
+ * time and waits for the answer. It reads nothing from Foundry itself: foundry/publication-transport.mjs passes in
+ * every Foundry-side function (the "ports") and carries the messages over socketlib, so this file runs in plain Node.
+ */
+
 import {
   STUDIO_ACCESS, STUDIO_REFUSALS, resolveActorArtAccess, resolveItemArtAccess, resolveStudioAccess
-} from './admission.mjs';
-import { actorArtReferences, actorUnitFolderName } from './character/variants.mjs';
+} from './access-rules.mjs';
+import { actorArtReferences, actorUnitFolderName } from './actor-art-files.mjs';
+import { comparableFilePath } from './utils/path.mjs';
 import {
   CHARACTER_STUDIO_ACTOR_TYPES, PUBLICATION_SEGMENT_MAX, STUDIO_AVATAR_PART_CATEGORIES, STUDIO_CHARACTER_ART_TREE,
   STUDIO_TOKEN_PART_CATEGORIES, STUDIO_WORLD_FOLDERS
@@ -112,41 +119,41 @@ function readPngDimensions(bytes) {
 /* -------------------------------------------- */
 
 /**
- * Check what a client means to publish: a world Actor, a plain PNG file name, and PNG bytes within the limits.
- * The client runs it before sending anything, for a quick answer, and the host runs it again on what arrives.
- * @param {{actorUuid?: *, filename?: *, bytes?: *}|null} intent     What to publish.
- * @returns {Readonly<{ok: boolean, code: string, data: object}>}
+ * Check what a client means to publish as one document's art: a document of the kind's own (a world Actor, or a
+ * world Item or one on a world Actor), a plain PNG file name, and PNG bytes within the limits. The client runs it
+ * before sending anything, for a quick answer, and the host runs it again on what arrives.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {object|null} intent      The document's uuid under the kind's `uuidKey`, the `filename` and the `bytes`.
+ * @returns {Readonly<{ok: boolean, code: string, data: object}>}   Accepted with `{uuid, filename, bytes}`.
  */
-function validateArtPublicationIntent(intent) {
-  const target = targetRefusal(intent?.actorUuid, intent?.filename);
+function validateArtIntent(kind, intent) {
+  const uuid = intent?.[kind.uuidKey];
+  const target = artTargetRefusal(kind, uuid, intent?.filename);
   if (target) return target;
   const bytes = intent?.bytes;
   const invalid = pngRefusal(bytes);
   if (invalid) return invalid;
-  const size = readPngDimensions(bytes);
-  const actorUuid = String(intent?.actorUuid);
-  return accepted('', {
-    actorUuid, actorId: WORLD_ACTOR_UUID.exec(actorUuid)?.[1] ?? '', filename: String(intent?.filename), bytes,
-    width: size.width, height: size.height
-  });
+  return accepted('', { uuid: String(uuid), filename: String(intent?.filename), bytes });
 }
 
 /* -------------------------------------------- */
 
 /**
- * Check a publication request as it arrives over the socket, decoding its bytes only once its target is sound.
+ * Check an art request as it arrives over the socket, decoding its bytes only once its target is sound.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
  * @param {*} request               The socket payload.
  * @returns {Readonly<{ok: boolean, code: string, data: object}>}
  */
-function validateArtPublicationRequest(request) {
+function validateArtRequest(kind, request) {
   if (!request || typeof request !== 'object' || typeof request.data !== 'string') {
     return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
   }
-  const target = targetRefusal(request.actorUuid, request.filename);
+  const uuid = request[kind.uuidKey];
+  const target = artTargetRefusal(kind, uuid, request.filename);
   if (target) return target;
   const bytes = decodeWithin(request.data, ART_PUBLICATION_LIMITS.maxBytes);
   if (!(bytes instanceof Uint8Array)) return bytes;
-  return validateArtPublicationIntent({ actorUuid: request.actorUuid, filename: request.filename, bytes });
+  return validateArtIntent(kind, { [kind.uuidKey]: uuid, filename: request.filename, bytes });
 }
 
 /* -------------------------------------------- */
@@ -179,7 +186,7 @@ function jsonRefusal(bytes) {
   let value = null;
   try {
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
-  } catch (_) {
+  } catch {
     return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
   }
   return value && typeof value === 'object' && !Array.isArray(value) ? null : refusal(STUDIO_REFUSALS.INVALID_REQUEST);
@@ -267,7 +274,21 @@ function sharedWriteFolders(worldId) {
   folders.set(`${root}/${STUDIO_WORLD_FOLDERS.projects}`,
     filename => named(filename, PROJECT_FILENAME, FILE_KINDS.JSON));
   folders.set(`${root}/${STUDIO_WORLD_FOLDERS.export}`, filename => named(filename, ART_FILENAME, FILE_KINDS.PNG));
+  folders.set(`${root}/${STUDIO_WORLD_FOLDERS.destructibles}`,
+    filename => named(filename, ART_FILENAME, FILE_KINDS.PNG));
   return folders;
+}
+
+/* -------------------------------------------- */
+
+/**
+ * The shared folders only the GM or an Assistant GM may write into: the scene cuts, since Scene Crop is theirs alone.
+ * @param {*} worldId
+ * @returns {Set<string>}           Empty when the world id is unsafe.
+ */
+function gmWriteFolders(worldId) {
+  const world = String(worldId ?? '');
+  return new Set(PATH_SEGMENT.test(world) ? [`worlds/${world}/${STUDIO_WORLD_FOLDERS.destructibles}`] : []);
 }
 
 /* -------------------------------------------- */
@@ -307,27 +328,69 @@ function named(filename, pattern, kind) {
  * it: world Actors (their art, avatar and prototype Token), the Items on them, world Items, Item compendium index
  * entries, and what the host reports through `ports.otherFileReferences` (Scenes and their Tokens, Tiles and notes,
  * Journal images, Macros, Roll Tables, User avatars and other compendium entries). A compendium entry is never owned.
- * @param {object} ports            The Foundry-side functions the host is given. The reference ones are optional.
- * @param {object|null} sender      The sending user.
- * @returns {Array<{path: string, owned: boolean, actor?: object, item?: object}>}
+ * @param {object} ports            The Foundry-side functions the host is given. The reference ones are optional,
+ *                                  but `tokenArtSlotKeys` must be given with `worldActors`.
+ * @param {object|null} sender      The sending user, or null when no reference needs to count as owned.
+ * @returns {Array<{path: string, owned: boolean, actor?: object, item?: object, document?: object}>}
  */
 function worldFileReferences(ports, sender) {
   const references = [];
   const add = (path, owned, source = {}) => {
     if (typeof path === 'string' && path) references.push({ path, owned: owned === true, ...source });
   };
+  const slotKeys = ports.worldActors ? ports.tokenArtSlotKeys() : [];
   for (const actor of ports.worldActors?.() ?? []) {
     const ownsActor = ports.ownsActor?.(actor, sender);
-    for (const { path } of actorArtReferences(actor)) add(path, ownsActor, { actor });
+    for (const { path } of actorArtReferences(actor, slotKeys)) add(path, ownsActor, { actor });
     add(actor?.prototypeToken?.texture?.src, ownsActor, { actor });
     for (const item of actor?.items ?? []) add(item?.img, ports.ownsItem?.(item, sender), { item });
   }
   for (const item of ports.worldItems?.() ?? []) add(item?.img, ports.ownsItem?.(item, sender), { item });
   for (const entry of ports.itemIndexes?.() ?? []) add(entry?.img, false, { item: entry });
   for (const { document, path } of ports.otherFileReferences?.() ?? []) {
-    add(path, ports.ownsDocument?.(document, sender));
+    add(path, ports.ownsDocument?.(document, sender), { document });
   }
   return references;
+}
+
+/* -------------------------------------------- */
+
+/**
+ * Every file path the world's documents point at, as comparableFilePath writes it, with the actor or Token that points
+ * at it. Build it once to ask {@link pathsHeldByOthers} several questions in a row.
+ * @param {object} ports            The Foundry-side functions {@link worldFileReferences} reads.
+ * @returns {Array<{path: string, actor: (object|undefined), token: (object|null)}>}
+ */
+export function worldPathIndex(ports) {
+  const index = [];
+  for (const reference of worldFileReferences(ports, null)) {
+    const path = comparableFilePath(reference.path);
+    if (!path) continue;
+    const token = reference.document?.documentName === 'Token' ? reference.document : null;
+    index.push({ path, actor: reference.actor, token });
+  }
+  return index;
+}
+
+/* -------------------------------------------- */
+
+/**
+ * Every file a document other than this actor uses, so Character Studio never names the actor's next art file after
+ * one. The actor's own art, its prototype token and its tokens on scenes count as the actor's, so a destination keeps
+ * a file only the actor uses. The host's check stays as the backstop for a Trusted player's save.
+ * @param {object} ports            The Foundry-side functions {@link worldFileReferences} reads.
+ * @param {object} actor            The actor being saved.
+ * @param {Array<object>} [index]   The world's paths from {@link worldPathIndex}, when already read.
+ * @returns {Set<string>}           The paths, as comparableFilePath writes them.
+ */
+export function pathsHeldByOthers(ports, actor, index = worldPathIndex(ports)) {
+  const held = new Set();
+  for (const entry of index) {
+    if (entry.actor === actor) continue;
+    if (entry.token && entry.token.actorId === actor?.id) continue;
+    held.add(entry.path);
+  }
+  return held;
 }
 
 /* -------------------------------------------- */
@@ -348,41 +411,37 @@ function findForeignReference(path, references, mayOverwrite) {
 /* -------------------------------------------- */
 
 /**
- * A stored file path in the form two references to one file share. The query and fragment are dropped, as are a
- * scheme and host and any leading slashes, since `/worlds/...` and `https://host/worlds/...` name the same file as
- * `worlds/...`. It is URL-decoded and lowercased, since a Windows host treats paths that differ only in case as one
- * file. editor/io.mjs names Item art files by it too.
- * @param {*} path                  Stored path.
- * @returns {string}                Comparable path, or '' for none.
+ * Whether one reference to a file still lets an Item's art be saved over that file: the Item's own reference does,
+ * another Item's never does, since copies of an Item never share a file, and any other document's does when the
+ * user owns that document.
+ * @param {object} item             The Item being saved.
+ * @returns {(reference: object) => boolean}  Takes a reference from worldFileReferences.
  */
-export function comparableFilePath(path) {
-  const raw = String(path ?? '').split(/[?#]/)[0].trim()
-    .replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, '')
-    .replace(/^\/+/, '');
-  if (!raw) return '';
-  try {
-    return decodeURIComponent(raw).toLowerCase();
-  } catch (_) {
-    return raw.toLowerCase();
-  }
+function itemArtMayOverwrite(item) {
+  const own = String(item?.uuid ?? '');
+  const self = candidate => candidate === item || (!!own && candidate?.uuid === own);
+  return reference => (reference.item ? self(reference.item) : reference.owned);
 }
 
 /* -------------------------------------------- */
 
 /**
- * Whether saving an Item's art at a path would overwrite a file something else relies on: any other Item, since
- * copies of an Item never share a file, or any other document the sender doesn't own.
- * @param {object} ports            See {@link createItemArtPublicationHost}.
- * @param {object|null} sender      The sending user.
- * @param {object} item             The Item being published for.
- * @param {string} path             The destination.
- * @returns {boolean}
+ * Every file an Item's art may not be saved over, by the rule the host checks a Trusted player's save against
+ * (itemArtMayOverwrite). Sprite Studio names the Item's file around them, so the host accepts the name it picks.
+ * @param {object} ports            The Foundry-side functions {@link worldFileReferences} reads.
+ * @param {object} item             The Item being saved.
+ * @param {object|null} user        The user saving it.
+ * @returns {Set<string>}           The paths, as comparableFilePath writes them.
  */
-function itemArtForeign(ports, sender, item, path) {
-  const own = String(item?.uuid ?? '');
-  const self = candidate => candidate === item || (!!own && candidate?.uuid === own);
-  const mayOverwrite = reference => (reference.item ? self(reference.item) : reference.owned);
-  return findForeignReference(path, worldFileReferences(ports, sender), mayOverwrite) !== null;
+export function itemPathsHeldByOthers(ports, item, user) {
+  const mayOverwrite = itemArtMayOverwrite(item);
+  const held = new Set();
+  for (const reference of worldFileReferences(ports, user)) {
+    if (mayOverwrite(reference)) continue;
+    const path = comparableFilePath(reference.path);
+    if (path) held.add(path);
+  }
+  return held;
 }
 
 /* -------------------------------------------- */
@@ -392,7 +451,7 @@ function itemArtForeign(ports, sender, item, path) {
  * library part set as another unit's art. The Gamemaster and Assistant GMs are never refused here. Nor are JSON
  * files (part sidecars, the palette sidecar, projects): no document points at one, so this check can't protect them.
  * @param {object} ports            See {@link createSharedFileHost}.
- * @param {string} senderId
+ * @param {string} senderId         The authenticated sender's user id.
  * @param {string} path             The destination.
  * @param {string} kind             One of {@link FILE_KINDS}.
  * @returns {boolean}
@@ -427,22 +486,81 @@ function resolveWorldItem(ports, itemUuid) {
 }
 
 /* -------------------------------------------- */
+/*  Actor and Item Art                          */
+/* -------------------------------------------- */
+
+/**
+ * What differs between saving an Actor's art and an Item's art through the host client. Both run the same checks;
+ * each kind supplies the parts that depend on the document.
+ * @typedef {object} ArtTargetKind
+ * @property {string} uuidKey                   The request field that holds the document's uuid.
+ * @property {RegExp} uuidPattern               The uuids this kind accepts.
+ * @property {string} notFound                  The refusal for a document that is gone or no longer qualifies.
+ * @property {string} failure                   The diagnostic recorded when a save throws.
+ * @property {(ports: object, uuid: string) => object|null} resolve          The document the uuid names now.
+ * @property {(ports: object, sender: object|null, document: object) => {access: string, code: string}} access
+ * @property {(ports: object, document: object) => string} folder            Where its art goes, or '' when unsafe.
+ * @property {(document: object) => (reference: object) => boolean} mayOverwrite   Whether one reference to a file
+ *                                                                          still lets a Trusted player save over it.
+ */
+
+/**
+ * Actor art: a world Actor of a type Character Studio edits, saved into its own unit folder. A Trusted player may
+ * save over a file only when every document using it is this Actor or one they own.
+ * @type {Readonly<ArtTargetKind>}
+ */
+const ACTOR_ART = Object.freeze({
+  uuidKey: 'actorUuid',
+  uuidPattern: WORLD_ACTOR_UUID,
+  notFound: STUDIO_REFUSALS.ACTOR_NOT_FOUND,
+  failure: 'The host could not save the Studio art.',
+  resolve: (ports, uuid) => {
+    const actorId = WORLD_ACTOR_UUID.exec(uuid)?.[1] ?? '';
+    const actor = [...ports.worldActors()].find(candidate => candidate?.id === actorId);
+    return actor && CHARACTER_STUDIO_ACTOR_TYPES.includes(actor.type) ? actor : null;
+  },
+  access: (ports, sender, actor) => resolveActorArtAccess(sender, {
+    allowlist: ports.allowlist(), ownsActor: ports.ownsActor(actor, sender)
+  }),
+  folder: (ports, actor) => artPublicationFolder({
+    worldId: ports.worldId(), unitFolder: actorUnitFolderName(actor, [...ports.worldActors()])
+  }),
+  mayOverwrite: actor => reference => reference.actor === actor || reference.owned
+});
+
+/**
+ * Item art: a world Item or one on a world Actor, saved into the world's Item art folder. A Trusted player may never
+ * save over a file another Item or a document they don't own uses (itemArtMayOverwrite).
+ * @type {Readonly<ArtTargetKind>}
+ */
+const ITEM_ART = Object.freeze({
+  uuidKey: 'itemUuid',
+  uuidPattern: WORLD_ITEM_UUID,
+  notFound: STUDIO_REFUSALS.ITEM_NOT_FOUND,
+  failure: 'The host could not save the Item art.',
+  resolve: resolveWorldItem,
+  access: (ports, sender, item) => resolveItemArtAccess(sender, {
+    allowlist: ports.allowlist(), ownsItem: ports.ownsItem(item, sender)
+  }),
+  folder: ports => itemArtPublicationFolder(ports.worldId()),
+  mayOverwrite: itemArtMayOverwrite
+});
+
+/* -------------------------------------------- */
 /*  Host                                        */
 /* -------------------------------------------- */
 
 /**
- * The host's side of Actor art saves, built in foundry/publication-transport.mjs.
- *
- * Every client registers it, but it refuses unless this client is the command host. It checks the sender again from
- * the user id Foundry's server attached to the message: role, allowlist and ownership, at the moment of writing.
- * The file goes in the Actor's own unit folder, never a folder the client names, and a Trusted Player can't
- * overwrite a file that an Actor they don't own still uses.
+ * The host's side of Actor art saves, which refuses unless this client is the host client. It checks the sender's
+ * role, allowlist and ownership at the moment of writing, from the user id Foundry's server attached, writes only into
+ * the Actor's own unit folder, and never lets a Trusted player overwrite a file an Actor they don't own still uses.
  * @param {object} ports
- * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the command host.
+ * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the host.
  * @param {() => boolean} ports.processing                             Whether system processing blocks publication.
  * @param {(id: string) => object|null} ports.user                      A user by id.
  * @param {() => *} ports.allowlist                                     The stored allowlist.
  * @param {() => Iterable<object>} ports.worldActors                    Every world Actor.
+ * @param {() => string[]} ports.tokenArtSlotKeys                       The system's token-art slot keys, in its order.
  * @param {() => string} ports.worldId                                  This world's id.
  * @param {(actor: object, user: object) => boolean} ports.ownsActor    Whether a user owns an Actor.
  * @param {(folder: string) => Promise<void>} ports.ensureFolder        Create a folder and its parents.
@@ -451,95 +569,23 @@ function resolveWorldItem(ports, itemUuid) {
  * @returns {Readonly<{publish: (request: *, senderId: *) => Promise<object>}>}
  */
 export function createArtPublicationHost(ports) {
-  return Object.freeze({
-    async publish(request, senderId) {
-      try {
-        return await publishOnHost(ports, request, senderId);
-      } catch (error) {
-        ports.report('Studio art publication failed on the host.', error);
-        return refusal(STUDIO_REFUSALS.WRITE_FAILED);
-      }
-    }
-  });
+  return createDocumentArtHost(ACTOR_ART, ports);
 }
 
 /* -------------------------------------------- */
 
 /**
- * Check the sender and the file, then save it into the Actor's own folder.
- * @param {object} ports            See {@link createArtPublicationHost}.
- * @param {*} request               The socket payload.
- * @param {*} senderId              The authenticated sender's user id.
- * @returns {Promise<object>}
- */
-async function publishOnHost(ports, request, senderId) {
-  const admitted = admitSender(ports, senderId);
-  if (admitted) return admitted;
-  const sender = ports.user(String(senderId ?? ''));
-
-  const valid = validateArtPublicationRequest(request);
-  if (!valid.ok) return valid;
-  const actors = [...ports.worldActors()];
-  const actor = actors.find(candidate => candidate?.id === valid.data.actorId);
-  if (!actor || !CHARACTER_STUDIO_ACTOR_TYPES.includes(actor.type)) return refusal(STUDIO_REFUSALS.ACTOR_NOT_FOUND);
-  const ownsActor = ports.ownsActor(actor, sender);
-  const art = resolveActorArtAccess(sender, { allowlist: ports.allowlist(), ownsActor });
-  if (art.access === STUDIO_ACCESS.DENIED) return refusal(art.code);
-
-  const folder = artPublicationFolder({ worldId: ports.worldId(), unitFolder: actorUnitFolderName(actor, actors) });
-  if (!folder) return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
-  const path = `${folder}/${valid.data.filename}`;
-  const mayOverwrite = reference => reference.actor === actor || reference.owned;
-  if (art.access === STUDIO_ACCESS.TRUSTED
-    && findForeignReference(path, worldFileReferences(ports, sender), mayOverwrite)) {
-    return refusal(STUDIO_REFUSALS.FOREIGN_ART);
-  }
-
-  return writeConfined(ports, folder, valid.data.filename, valid.data.bytes, FILE_KINDS.PNG,
-    () => recheckPublication(ports, valid.data, String(senderId ?? ''), actor, folder));
-}
-
-/**
- * Repeat the host, access, Actor, folder and art-reference checks just before the write, since any of them can
- * change while the folder is being created. Returns a refusal, or null to go ahead.
- */
-function recheckPublication(ports, intent, senderId, originalActor, folder) {
-  const admitted = admitSender(ports, senderId);
-  if (admitted) return admitted;
-  const sender = ports.user(senderId);
-  const actors = [...ports.worldActors()];
-  const actor = actors.find(candidate => candidate?.id === intent.actorId);
-  if (!actor || actor !== originalActor) return refusal(STUDIO_REFUSALS.ACTOR_NOT_FOUND);
-  const access = resolveActorArtAccess(sender, {
-    allowlist: ports.allowlist(), ownsActor: ports.ownsActor(actor, sender)
-  });
-  if (access.access === STUDIO_ACCESS.DENIED) return refusal(access.code);
-  if (folder !== artPublicationFolder({ worldId: ports.worldId(), unitFolder: actorUnitFolderName(actor, actors) })) {
-    return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
-  }
-  if (access.access === STUDIO_ACCESS.TRUSTED && findForeignReference(`${folder}/${intent.filename}`,
-    worldFileReferences(ports, sender), reference => reference.actor === actor || reference.owned)) {
-    return refusal(STUDIO_REFUSALS.FOREIGN_ART);
-  }
-  return null;
-}
-
-/* -------------------------------------------- */
-
-/**
- * The host's side of Item art publication, built in foundry/publication-transport.mjs. It answers Sprite Studio
- * saves from anyone who can't upload directly.
- *
- * Like Actor art, everything is decided again from the authenticated sender at the moment of writing. The Item must
- * be a world Item or one on a world Actor, a Trusted Player must own it, the file goes in this world's Item art
- * folder, never one the client names, and a Trusted Player can't overwrite a file any other Item references.
+ * The host's side of Item art saves, decided again from the authenticated sender at the moment of writing. The Item
+ * must be a world Item or on a world Actor, and a Trusted player must own it; the file goes in this world's Item art
+ * folder, and a Trusted player can't overwrite a file any other Item references.
  * @param {object} ports
- * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the command host.
+ * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the host.
  * @param {() => boolean} ports.processing                             Whether system processing blocks publication.
  * @param {(id: string) => object|null} ports.user                      A user by id.
  * @param {() => *} ports.allowlist                                     The stored allowlist.
  * @param {() => Iterable<object>} ports.worldItems                     Every world Item.
  * @param {() => Iterable<object>} ports.worldActors                    Every world Actor, with its Items.
+ * @param {() => string[]} ports.tokenArtSlotKeys                       The system's token-art slot keys, in its order.
  * @param {() => Iterable<object>} ports.itemIndexes                    Every Item compendium's index entries.
  * @param {() => string} ports.worldId                                  This world's id.
  * @param {(item: object, user: object) => boolean} ports.ownsItem      Whether a user owns an Item.
@@ -549,12 +595,25 @@ function recheckPublication(ports, intent, senderId, originalActor, folder) {
  * @returns {Readonly<{publish: (request: *, senderId: *) => Promise<object>}>}
  */
 export function createItemArtPublicationHost(ports) {
+  return createDocumentArtHost(ITEM_ART, ports);
+}
+
+/* -------------------------------------------- */
+
+/**
+ * One kind's host side of art saves. A save that throws is recorded and refused as a failed write.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {object} ports            The ports {@link createArtPublicationHost} or {@link createItemArtPublicationHost}
+ *                                  lists.
+ * @returns {Readonly<{publish: (request: *, senderId: *) => Promise<object>}>}
+ */
+function createDocumentArtHost(kind, ports) {
   return Object.freeze({
     async publish(request, senderId) {
       try {
-        return await publishItemArtOnHost(ports, request, senderId);
+        return await publishArtOnHost(kind, ports, request, senderId);
       } catch (error) {
-        ports.report('Studio Item art publication failed on the host.', error);
+        ports.report(kind.failure, error);
         return refusal(STUDIO_REFUSALS.WRITE_FAILED);
       }
     }
@@ -564,75 +623,71 @@ export function createItemArtPublicationHost(ports) {
 /* -------------------------------------------- */
 
 /**
- * Check the sender, the Item and the file, then save it into the world's Item art folder.
- * @param {object} ports            See {@link createItemArtPublicationHost}.
+ * Check the sender, the document and the file, then save it into the document's folder. Just before the write the
+ * checks run again, and the save is refused when the document is gone or replaced or its folder has moved.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {object} ports            See {@link createDocumentArtHost}.
  * @param {*} request               The socket payload.
  * @param {*} senderId              The authenticated sender's user id.
  * @returns {Promise<object>}
  */
-async function publishItemArtOnHost(ports, request, senderId) {
+async function publishArtOnHost(kind, ports, request, senderId) {
   const id = String(senderId ?? '');
-  const admitted = admitSender(ports, id);
-  if (admitted) return admitted;
-  if (!request || typeof request !== 'object' || typeof request.data !== 'string'
-    || typeof request.itemUuid !== 'string' || !WORLD_ITEM_UUID.test(request.itemUuid)) {
-    return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
-  }
-  const filename = request.filename;
-  if (!named(filename, ART_FILENAME, FILE_KINDS.PNG)) return refusal(STUDIO_REFUSALS.BAD_FILENAME);
-  const bytes = decodeWithin(request.data, ART_PUBLICATION_LIMITS.maxBytes);
-  if (!(bytes instanceof Uint8Array)) return bytes;
-  const invalid = pngRefusal(bytes);
-  if (invalid) return invalid;
+  const refused = senderRefusal(ports, id);
+  if (refused) return refused;
+  const valid = validateArtRequest(kind, request);
+  if (!valid.ok) return valid;
+  const { uuid, filename, bytes } = valid.data;
 
-  const item = resolveWorldItem(ports, request.itemUuid);
-  const verdict = itemArtVerdict(ports, id, item, filename);
+  const verdict = artVerdict(kind, ports, id, uuid, filename);
   if (verdict.refusal) return verdict.refusal;
   return writeConfined(ports, verdict.folder, filename, bytes, FILE_KINDS.PNG, () => {
-    const again = itemArtVerdict(ports, id, resolveWorldItem(ports, request.itemUuid), filename);
+    const again = artVerdict(kind, ports, id, uuid, filename);
     if (again.refusal) return again.refusal;
-    return again.item === item && again.folder === verdict.folder ? null : refusal(STUDIO_REFUSALS.ITEM_NOT_FOUND);
+    if (again.document !== verdict.document) return refusal(kind.notFound);
+    return again.folder === verdict.folder ? null : refusal(STUDIO_REFUSALS.INVALID_REQUEST);
   });
 }
 
 /* -------------------------------------------- */
 
 /**
- * Whether a sender may write one Item's art file now, and where: host, access, the Item, ownership, the folder and
- * other Items' references, in that order. Run once on arrival and again just before the write.
- * @param {object} ports            See {@link createItemArtPublicationHost}.
- * @param {string} senderId
- * @param {object|null} item        The Item the request names, as resolved now.
- * @param {string} filename
- * @returns {{refusal?: Readonly<object>, item?: object, folder?: string}}
+ * Whether a sender may write one document's art file now, and where: host, access, the document, ownership, the
+ * folder and other documents' references, in that order. Run once on arrival and again just before the write.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {object} ports            See {@link createDocumentArtHost}.
+ * @param {string} senderId         The authenticated sender's user id.
+ * @param {string} uuid             A uuid already matched against the kind's pattern.
+ * @param {string} filename         A file name already checked against ART_FILENAME.
+ * @returns {{refusal?: Readonly<object>, document?: object, folder?: string}}
  */
-function itemArtVerdict(ports, senderId, item, filename) {
-  const admitted = admitSender(ports, senderId);
-  if (admitted) return { refusal: admitted };
-  if (!item) return { refusal: refusal(STUDIO_REFUSALS.ITEM_NOT_FOUND) };
+function artVerdict(kind, ports, senderId, uuid, filename) {
+  const refused = senderRefusal(ports, senderId);
+  if (refused) return { refusal: refused };
+  const document = kind.resolve(ports, uuid);
+  if (!document) return { refusal: refusal(kind.notFound) };
   const sender = ports.user(senderId);
-  const access = resolveItemArtAccess(sender, { allowlist: ports.allowlist(), ownsItem: ports.ownsItem(item, sender) });
+  const access = kind.access(ports, sender, document);
   if (access.access === STUDIO_ACCESS.DENIED) return { refusal: refusal(access.code) };
-  const folder = itemArtPublicationFolder(ports.worldId());
+  const folder = kind.folder(ports, document);
   if (!folder) return { refusal: refusal(STUDIO_REFUSALS.INVALID_REQUEST) };
-  if (access.access === STUDIO_ACCESS.TRUSTED && itemArtForeign(ports, sender, item, `${folder}/${filename}`)) {
+  if (access.access === STUDIO_ACCESS.TRUSTED
+    && findForeignReference(`${folder}/${filename}`, worldFileReferences(ports, sender), kind.mayOverwrite(document))) {
     return { refusal: refusal(STUDIO_REFUSALS.FOREIGN_ART) };
   }
-  return { item, folder };
+  return { document, folder };
 }
 
 /* -------------------------------------------- */
 
 /**
- * The host's side of shared Studio files, built in foundry/publication-transport.mjs: the parts library, its
- * sidecars, the world's palette sidecar, project files and exports, written or listed for a user who can't reach
- * Foundry's file API directly.
- *
- * Every request is decided from the authenticated sender, and its folder must be exactly one the host builds from
- * its own world id (see sharedWriteFolders). Each folder takes only its own file names, and the bytes must be the
- * kind the name says. A user's workspace file is never written this way. The checks run again just before the write.
+ * The host's side of shared Studio files, written or listed for a user who can't reach Foundry's file API: the parts
+ * library and its sidecars, the palette sidecar, projects, exports and scene cuts. Each request is decided from the
+ * authenticated sender into a folder from `sharedWriteFolders`, with that folder's own names and matching bytes; scene
+ * cuts are for a GM or Assistant GM, a Trusted player's PNG is checked against files other documents use, and the
+ * checks run again just before the write.
  * @param {object} ports
- * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the command host.
+ * @param {() => {localIsHost?: boolean}} ports.host                    This client's view of the host.
  * @param {() => boolean} ports.processing                             Whether system processing blocks writing.
  * @param {(id: string) => object|null} ports.user                      A user by id.
  * @param {() => *} ports.allowlist                                     The stored allowlist.
@@ -651,7 +706,7 @@ export function createSharedFileHost(ports) {
       try {
         return await writeSharedFileOnHost(ports, request, String(senderId ?? ''));
       } catch (error) {
-        ports.report('A shared Studio file write failed on the host.', error);
+        ports.report('The host could not save a shared Studio file.', error);
         return refusal(STUDIO_REFUSALS.WRITE_FAILED);
       }
     },
@@ -659,7 +714,7 @@ export function createSharedFileHost(ports) {
       try {
         return await listSharedFolderOnHost(ports, request, String(senderId ?? ''));
       } catch (error) {
-        ports.report('A shared Studio folder listing failed on the host.', error);
+        ports.report('The host could not list a shared Studio folder.', error);
         return refusal(STUDIO_REFUSALS.WRITE_FAILED);
       }
     }
@@ -676,13 +731,13 @@ export function createSharedFileHost(ports) {
  * @returns {Promise<object>}
  */
 async function writeSharedFileOnHost(ports, request, senderId) {
-  const admitted = admitSender(ports, senderId);
-  if (admitted) return admitted;
+  const refused = senderRefusal(ports, senderId);
+  if (refused) return refused;
   if (!request || typeof request !== 'object' || typeof request.data !== 'string') {
     return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
   }
   const { folder, filename } = request;
-  const target = sharedFileTarget(ports, folder, filename);
+  const target = sharedFileTarget(ports, folder, filename, senderId);
   if (!target.kind) return target.refusal;
   const bytes = decodeWithin(request.data, maxBytesFor(target.kind));
   if (!(bytes instanceof Uint8Array)) return bytes;
@@ -693,9 +748,9 @@ async function writeSharedFileOnHost(ports, request, senderId) {
   }
 
   return writeConfined(ports, target.folder, filename, bytes, target.kind, () => {
-    const again = admitSender(ports, senderId);
+    const again = senderRefusal(ports, senderId);
     if (again) return again;
-    const current = sharedFileTarget(ports, folder, filename);
+    const current = sharedFileTarget(ports, folder, filename, senderId);
     if (current.refusal) return current.refusal;
     const unchanged = current.kind === target.kind && current.folder === target.folder;
     if (!unchanged) return refusal(STUDIO_REFUSALS.FOLDER_REFUSED);
@@ -707,17 +762,23 @@ async function writeSharedFileOnHost(ports, request, senderId) {
 /* -------------------------------------------- */
 
 /**
- * The host's own folder a request's folder names exactly, and the kind of file its name makes there.
+ * The host's own folder a request's folder names exactly, and the kind of file its name makes there. A sender who
+ * isn't the GM or an Assistant GM is refused a folder only they may write into.
  * @param {object} ports            See {@link createSharedFileHost}.
  * @param {*} folder                The folder the request names.
  * @param {*} filename              The file name the request names.
+ * @param {string} senderId         The authenticated sender's user id.
  * @returns {{folder?: string, kind?: string, refusal?: Readonly<object>}}
  */
-function sharedFileTarget(ports, folder, filename) {
+function sharedFileTarget(ports, folder, filename, senderId) {
   if (typeof folder !== 'string') return { refusal: refusal(STUDIO_REFUSALS.FOLDER_REFUSED) };
   const folders = sharedWriteFolders(ports.worldId());
   const own = [...folders.keys()].find(candidate => candidate === folder);
   if (!own) return { refusal: refusal(STUDIO_REFUSALS.FOLDER_REFUSED) };
+  if (gmWriteFolders(ports.worldId()).has(own)
+    && resolveStudioAccess(ports.user(senderId), ports.allowlist()).access !== STUDIO_ACCESS.GM) {
+    return { refusal: refusal(STUDIO_REFUSALS.GM_ONLY) };
+  }
   const kind = folders.get(own)(filename);
   return kind ? { folder: own, kind } : { refusal: refusal(STUDIO_REFUSALS.BAD_FILENAME) };
 }
@@ -749,13 +810,13 @@ async function listSharedFolderOnHost(ports, request, senderId) {
 /* -------------------------------------------- */
 
 /**
- * Refuse at once unless this client is the command host, no system command is resolving, and the sender may use
+ * Refuse at once unless this client is the host client, no system command is resolving, and the sender may use
  * Studio. Returns the refusal, or null.
  * @param {object} ports
  * @param {*} senderId
  * @returns {Readonly<object>|null}
  */
-function admitSender(ports, senderId) {
+function senderRefusal(ports, senderId) {
   if (ports.host()?.localIsHost !== true) return refusal(STUDIO_REFUSALS.NOT_HOST);
   if (ports.processing()) return refusal(STUDIO_REFUSALS.PROCESSING);
   const studio = resolveStudioAccess(ports.user(String(senderId ?? '')), ports.allowlist());
@@ -793,12 +854,12 @@ async function writeConfined(ports, folder, filename, bytes, kind, recheck) {
 /* -------------------------------------------- */
 
 /**
- * The host's gate that lets each sender have one request in flight. A second request from the same sender while the
- * first is still running is refused at once as busy and never queued, so one client can't stack writes or listings
- * on the Gamemaster's browser. The transport runs every socket handler through it.
+ * The host's one-request-per-sender limit. A second request from the same sender while the first is still running is
+ * refused at once as busy and never queued, so one client can't stack writes or listings on the host client. The
+ * transport runs every socket handler through it.
  * @returns {Readonly<{run: (senderId: *, task: () => Promise<object>) => Promise<object>}>}
  */
-export function createSenderGate() {
+export function createSenderLimit() {
   const busy = new Set();
   return Object.freeze({
     async run(senderId, task) {
@@ -818,7 +879,8 @@ export function createSenderGate() {
 
 /**
  * A client's queue that sends its host requests one at a time, each starting only once the one before has finished,
- * so the client never trips the host's busy gate by itself. A task that fails doesn't stop the ones behind it.
+ * so the client is never refused as busy by the host's one-request-per-sender limit. A task that fails doesn't stop
+ * the ones behind it.
  * @returns {(task: () => Promise<*>) => Promise<*>}
  */
 export function createRequestQueue() {
@@ -835,31 +897,18 @@ export function createRequestQueue() {
 /* -------------------------------------------- */
 
 /**
- * A client's side of Actor art saves, built in foundry/publication-transport.mjs: check the file, send it to the
- * host, and wait up to the response deadline. No answer in time means "maybe saved", and the request is never
- * resent, because the host may still be writing it. The person saving decides whether to save again.
- *
- * The host is read again in the same step that sends, since socketlib refuses to send to a user who has left, and
- * nothing sent means the art was not saved.
+ * A client's side of Actor art saves: check the file, send it to the host, and wait up to the response deadline. No
+ * answer in time means it may or may not be saved, and the request is never resent, since the host may still be
+ * writing it.
  * @param {object} ports
  * @param {() => {state?: string, hostUserId?: string}} ports.host             This client's view of the host.
+ * @param {() => Readonly<Record<string, string>>} ports.hostStates           The system's host states, by name.
  * @param {(hostUserId: string, request: object) => Promise<*>} ports.send     Deliver a request to the host.
  * @param {(message: string, error: *) => void} ports.report                   Record a diagnostic.
  * @returns {Readonly<{publish: (intent: object) => Promise<object>}>}
  */
-export function createArtPublicationClient({ host, send, report }) {
-  return Object.freeze({
-    async publish(intent) {
-      const target = host() ?? {};
-      const unavailable = hostRefusal(target);
-      if (unavailable) return unavailable;
-      const valid = validateArtPublicationIntent(intent);
-      if (!valid.ok) return valid;
-      const { actorUuid, filename, bytes } = valid.data;
-      const request = { actorUuid, filename, data: encodeArtBytes(bytes) };
-      return settleWithin(() => sendToSameHost(host, target, send, request), ART_PUBLICATION_LIMITS.responseMs, report);
-    }
-  });
+export function createArtPublicationClient(ports) {
+  return createDocumentArtClient(ACTOR_ART, ports);
 }
 
 /* -------------------------------------------- */
@@ -869,68 +918,90 @@ export function createArtPublicationClient({ host, send, report }) {
  * @param {object} ports            See {@link createArtPublicationClient}.
  * @returns {Readonly<{publish: (intent: {itemUuid: string, filename: string, bytes: Uint8Array}) => Promise<object>}>}
  */
-export function createItemArtPublicationClient({ host, send, report }) {
+export function createItemArtPublicationClient(ports) {
+  return createDocumentArtClient(ITEM_ART, ports);
+}
+
+/* -------------------------------------------- */
+
+/**
+ * One kind's client side of art saves: check the intent, then send the document's uuid, the file name and the bytes
+ * as base64 to the host.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {object} ports            See {@link createArtPublicationClient}.
+ * @returns {Readonly<{publish: (intent: object) => Promise<object>}>}
+ */
+function createDocumentArtClient(kind, { host, hostStates, send, report }) {
+  const ports = { host, hostStates, report };
   return Object.freeze({
-    async publish(intent) {
-      const target = host() ?? {};
-      const unavailable = hostRefusal(target);
-      if (unavailable) return unavailable;
-      const itemUuid = intent?.itemUuid;
-      if (typeof itemUuid !== 'string' || !WORLD_ITEM_UUID.test(itemUuid)) {
-        return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
-      }
-      if (!named(intent?.filename, ART_FILENAME, FILE_KINDS.PNG)) return refusal(STUDIO_REFUSALS.BAD_FILENAME);
-      const invalid = pngRefusal(intent?.bytes);
-      if (invalid) return invalid;
-      const request = { itemUuid, filename: intent.filename, data: encodeArtBytes(intent.bytes) };
-      return settleWithin(() => sendToSameHost(host, target, send, request), ART_PUBLICATION_LIMITS.responseMs, report);
-    }
+    publish: intent => askHost(ports, send, () => {
+      const valid = validateArtIntent(kind, intent);
+      if (!valid.ok) return { refused: valid };
+      const { uuid, filename, bytes } = valid.data;
+      return { request: { [kind.uuidKey]: uuid, filename, data: encodeArtBytes(bytes) } };
+    })
   });
 }
 
 /* -------------------------------------------- */
 
 /**
- * A client's side of shared Studio files: write one file or list one folder through the host, with the same host
- * states and deadline as art publication. The client checks the file name and bytes for a quick answer. Only the
- * host decides which folders are Studio's. `send` is told which of the two a request is, so the transport can pick
- * its socket operation.
+ * A client's side of shared Studio files: write one file or list one folder through the host, with art publication's
+ * host states and deadline. The client checks the name and bytes for a quick answer, but only the host decides which
+ * folders are Studio's.
  * @param {object} ports
  * @param {() => {state?: string, hostUserId?: string}} ports.host             This client's view of the host.
+ * @param {() => Readonly<Record<string, string>>} ports.hostStates           The system's host states, by name.
  * @param {(hostUserId: string, request: object, action: 'write'|'list') => Promise<*>} ports.send
  * @param {(message: string, error: *) => void} ports.report                   Record a diagnostic.
  * @returns {Readonly<{write: (intent: {folder: string, filename: string, bytes: Uint8Array}) => Promise<object>,
  *   list: (intent: {folder: string}) => Promise<object>}>}
  */
-export function createSharedFileClient({ host, send, report }) {
+export function createSharedFileClient({ host, hostStates, send, report }) {
+  const ports = { host, hostStates, report };
+  const write = (hostUserId, request) => send(hostUserId, request, 'write');
+  const list = (hostUserId, request) => send(hostUserId, request, 'list');
   return Object.freeze({
-    async write(intent) {
-      const target = host() ?? {};
-      const unavailable = hostRefusal(target);
-      if (unavailable) return unavailable;
+    write: intent => askHost(ports, write, () => {
       const folder = intent?.folder;
-      if (!sendableFolder(folder)) return refusal(STUDIO_REFUSALS.FOLDER_REFUSED);
+      if (!sendableFolder(folder)) return { refused: refusal(STUDIO_REFUSALS.FOLDER_REFUSED) };
       const filename = intent?.filename;
       const kind = named(filename, ART_FILENAME, FILE_KINDS.PNG) || named(filename, PROJECT_FILENAME, FILE_KINDS.JSON);
-      if (!kind) return refusal(STUDIO_REFUSALS.BAD_FILENAME);
+      if (!kind) return { refused: refusal(STUDIO_REFUSALS.BAD_FILENAME) };
       const invalid = fileBytesRefusal(kind, intent?.bytes);
-      if (invalid) return invalid;
-      const request = { folder, filename, data: encodeArtBytes(intent.bytes) };
-      const write = (hostUserId, payload) => send(hostUserId, payload, 'write');
-      return settleWithin(() => sendToSameHost(host, target, write, request), ART_PUBLICATION_LIMITS.responseMs,
-        report);
-    },
-    async list(intent) {
-      const target = host() ?? {};
-      const unavailable = hostRefusal(target);
-      if (unavailable) return unavailable;
+      if (invalid) return { refused: invalid };
+      return { request: { folder, filename, data: encodeArtBytes(intent.bytes) } };
+    }),
+    list: intent => askHost(ports, list, () => {
       const folder = intent?.folder;
-      if (!sendableFolder(folder)) return refusal(STUDIO_REFUSALS.FOLDER_REFUSED);
-      const list = (hostUserId, payload) => send(hostUserId, payload, 'list');
-      return settleWithin(() => sendToSameHost(host, target, list, { folder }), ART_PUBLICATION_LIMITS.responseMs,
-        report, 'files');
-    }
+      if (!sendableFolder(folder)) return { refused: refusal(STUDIO_REFUSALS.FOLDER_REFUSED) };
+      return { request: { folder } };
+    }, 'files')
   });
+}
+
+/* -------------------------------------------- */
+
+/**
+ * The round trip every client shares: check the host this client sees, let `prepare` check the intent and build the
+ * request, then send it to that same host and wait up to the response deadline. A refusal at either check is
+ * returned, and nothing is sent.
+ * @param {object} ports            The client's `host`, `hostStates` and `report` ports.
+ * @param {(hostUserId: string, request: object) => Promise<*>} send               Deliver the request to the host.
+ * @param {() => {refused?: Readonly<object>, request?: object}} prepare           The refusal the intent earns, or
+ *                                                                                  the request to send.
+ * @param {'path'|'files'} [expect] What an accepted answer carries: a stored path, or a folder's file names.
+ * @returns {Promise<object>}
+ */
+async function askHost({ host, hostStates, report }, send, prepare, expect = 'path') {
+  const target = host() ?? {};
+  const states = hostStates();
+  const unavailable = hostRefusal(target, states);
+  if (unavailable) return unavailable;
+  const { refused, request } = prepare();
+  if (refused) return refused;
+  return answerWithin(() => sendToSameHost(host, states, target, send, request), ART_PUBLICATION_LIMITS.responseMs,
+    report, expect);
 }
 
 /* -------------------------------------------- */
@@ -938,10 +1009,10 @@ export function createSharedFileClient({ host, send, report }) {
 /**
  * Why the host this client sees can't take a request, or null when it can.
  * @param {{state?: string, hostUserId?: string}} target
+ * @param {Readonly<Record<string, string>>} states  The system's host states, by name.
  * @returns {Readonly<object>|null}
  */
-function hostRefusal(target) {
-  const states = game.emblemRpg.api.protocol.hostStates;
+function hostRefusal(target, states) {
   if (target.state === states.MULTIPLE_HOSTS) return refusal(STUDIO_REFUSALS.MULTIPLE_HOSTS);
   if (target.state === states.DUPLICATE_PAGES) return refusal(STUDIO_REFUSALS.DUPLICATE_PAGES);
   if (target.state !== states.READY || !target.hostUserId) return refusal(STUDIO_REFUSALS.NO_HOST);
@@ -954,14 +1025,15 @@ function hostRefusal(target) {
  * Send to the host the request was checked against, reading the host again in the same step. A host that has left
  * or changed is refused as no host, and nothing is sent.
  * @param {() => {state?: string, hostUserId?: string}} host
+ * @param {Readonly<Record<string, string>>} states  The system's host states, by name.
  * @param {{hostUserId?: string}} target
  * @param {(hostUserId: string, request: object) => Promise<*>} send
  * @param {object} request
  * @returns {*}
  */
-function sendToSameHost(host, target, send, request) {
+function sendToSameHost(host, states, target, send, request) {
   const current = host() ?? {};
-  if (current.state !== game.emblemRpg.api.protocol.hostStates.READY || current.hostUserId !== target.hostUserId) {
+  if (current.state !== states.READY || current.hostUserId !== target.hostUserId) {
     return refusal(STUDIO_REFUSALS.NO_HOST);
   }
   return send(String(target.hostUserId), request);
@@ -988,7 +1060,7 @@ function sendableFolder(folder) {
  * @param {'path'|'files'} [expect]  What an accepted answer carries: a stored path, or a folder's file names.
  * @returns {Promise<object>}
  */
-async function settleWithin(request, responseMs, report, expect = 'path') {
+async function answerWithin(request, responseMs, report, expect = 'path') {
   let timer = null;
   const deadline = new Promise(resolve => {
     timer = setTimeout(() => resolve(refusal(STUDIO_REFUSALS.OUTCOME_UNKNOWN)), responseMs);
@@ -1035,15 +1107,14 @@ function wellFormedOutcome(result, expect = 'path') {
 /* -------------------------------------------- */
 
 /**
- * The refusal a target earns before any bytes are read, or null when it is sound.
- * @param {*} actorUuid
- * @param {*} filename
+ * The refusal an art target earns before any bytes are read, or null when it is sound.
+ * @param {ArtTargetKind} kind      ACTOR_ART or ITEM_ART.
+ * @param {*} uuid                  Must match the kind's uuid pattern.
+ * @param {*} filename              Must be a plain PNG file name.
  * @returns {Readonly<object>|null}
  */
-function targetRefusal(actorUuid, filename) {
-  if (typeof actorUuid !== 'string' || !WORLD_ACTOR_UUID.test(actorUuid)) {
-    return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
-  }
+function artTargetRefusal(kind, uuid, filename) {
+  if (typeof uuid !== 'string' || !kind.uuidPattern.test(uuid)) return refusal(STUDIO_REFUSALS.INVALID_REQUEST);
   if (!named(filename, ART_FILENAME, FILE_KINDS.PNG)) return refusal(STUDIO_REFUSALS.BAD_FILENAME);
   return null;
 }

@@ -4,31 +4,16 @@
     <header class="ete-pane-header"><span>{{itemName}}</span></header>
 
     <div class="ete-toolbar">
-      <button type="button" class="acp-btn acp-btn-sm" data-action="importImage" data-tooltip="Import an image from disk (auto-converts to pixel art)"><i class="fas fa-upload"></i> Import</button>
+      <button type="button" class="sts-btn sts-btn-sm" data-action="importImage"
+        data-tooltip="Import an image from disk and convert it to pixel art"><i class="fas fa-upload"></i>
+        Import</button>
       <span class="ete-toolbar-spacer"></span>
-      <button type="button" class="acp-btn acp-btn-sm acp-btn-danger" data-action="clearArt" data-tooltip="Clear the canvas"><i class="fas fa-trash"></i></button>
+      <button type="button" class="sts-btn sts-btn-sm sts-btn-danger" data-action="clearArt"
+        data-tooltip="Clear the canvas"><i class="fas fa-trash"></i></button>
     </div>
 
     <div class="ete-pane-work">
-      <div class="ete-tools" data-item-tools>
-        <button type="button" class="ete-tool-btn is-active" data-tool="pan" data-tooltip="Pan / move layer"><i class="fas fa-hand"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool="wand" data-tooltip="Magic Wand"><i class="fas fa-wand-magic-sparkles"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool="rect" data-tooltip="Rectangle Select"><i class="fas fa-vector-square"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool="move" data-tooltip="Move Selection"><i class="fas fa-arrows-up-down-left-right"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool="brush" data-tooltip="Brush"><i class="fas fa-paintbrush"></i></button>
-        <button type="button" class="ete-tool-btn ete-tool-brush-color" data-tool-action="brushColor" data-tooltip="Brush colour"><span class="ete-tool-swatch-inner is-eraser"></span></button>
-        <button type="button" class="ete-tool-btn" data-tool="fill" data-tooltip="Fill colour region"><i class="fas fa-fill-drip"></i></button>
-        <span class="ete-tool-spacer"></span>
-        <button type="button" class="ete-tool-btn ete-tool-cut" data-tool="cut" data-tooltip="Cut selection to clipboard (Ctrl+X / Delete)"><i class="fas fa-scissors"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool-action="copySelection" data-tooltip="Copy selected pixels (Ctrl+C)"><i class="fas fa-clipboard"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool-action="pasteSelection" data-tooltip="Paste pixels as a movable selection (Ctrl+V)"><i class="fas fa-clipboard-check"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool-action="rotateSelection"
-          data-tooltip="Rotate 15° (Shift: 90°, [ ])"><i class="fas fa-rotate"></i></button>
-        <button type="button" class="ete-tool-btn" data-tool="deselect" data-tooltip="Clear selection"><i class="fas fa-ban"></i></button>
-        <span class="ete-tool-spacer"></span>
-        <button type="button" class="ete-tool-btn ete-tool-history" data-tool-action="undo" data-tooltip="Undo (Ctrl+Z)"><i class="fas fa-rotate-left"></i></button>
-        <button type="button" class="ete-tool-btn ete-tool-history" data-tool-action="redo" data-tooltip="Redo (Ctrl+Shift+Z / Ctrl+Y)"><i class="fas fa-rotate-right"></i></button>
-      </div>
+      {{> "modules/emblem-rpg-studio/templates/editor/tool-rail.hbs"}}
       <div class="ete-work-col">
         <div class="ete-canvas-area">
           <div class="ete-canvas-mount"></div>
@@ -42,7 +27,8 @@
       <button type="button" class="fecc-rail-tab" data-action="toggleTray" data-fecc-tab="adjust"
         data-tooltip="Adjust hue, saturation, brightness and contrast"><i class="fas fa-sliders"></i>
         <span>Adjust</span></button>
-      <button type="button" class="fecc-rail-tab" data-action="toggleTray" data-fecc-tab="colour" data-tooltip="Recolour image tones"><i class="fas fa-droplet"></i><span>Recolour</span></button>
+      <button type="button" class="fecc-rail-tab" data-action="toggleTray" data-fecc-tab="colour"
+        data-tooltip="Recolour image tones"><i class="fas fa-droplet"></i><span>Recolour</span></button>
     </div>
     <div class="fecc-side-body">
       <div class="fecc-side-pane iis-adjust" data-fecc-pane="adjust">
@@ -52,34 +38,40 @@
             <span class="iis-adjust-label">Hue</span>
             <div class="iis-adjust-control">
               <input type="range" data-adj="hue" min="-180" max="180" step="1" value="0" disabled>
-              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="hue" data-tooltip="Reset Hue" disabled><i class="fas fa-rotate-left"></i></button>
+              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="hue"
+                data-tooltip="Reset Hue" disabled><i class="fas fa-rotate-left"></i></button>
             </div>
           </div>
           <div class="iis-adjust-row">
             <span class="iis-adjust-label">Saturation</span>
             <div class="iis-adjust-control">
               <input type="range" data-adj="sat" min="-100" max="100" step="1" value="0" disabled>
-              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="sat" data-tooltip="Reset Saturation" disabled><i class="fas fa-rotate-left"></i></button>
+              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="sat"
+                data-tooltip="Reset Saturation" disabled><i class="fas fa-rotate-left"></i></button>
             </div>
           </div>
           <div class="iis-adjust-row">
             <span class="iis-adjust-label">Brightness</span>
             <div class="iis-adjust-control">
               <input type="range" data-adj="bright" min="-100" max="100" step="1" value="0" disabled>
-              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="bright" data-tooltip="Reset Brightness" disabled><i class="fas fa-rotate-left"></i></button>
+              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="bright"
+                data-tooltip="Reset Brightness" disabled><i class="fas fa-rotate-left"></i></button>
             </div>
           </div>
           <div class="iis-adjust-row">
             <span class="iis-adjust-label">Contrast</span>
             <div class="iis-adjust-control">
               <input type="range" data-adj="contrast" min="-100" max="100" step="1" value="0" disabled>
-              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="contrast" data-tooltip="Reset Contrast" disabled><i class="fas fa-rotate-left"></i></button>
+              <button type="button" class="iis-adjust-reset" data-action="adjustReset" data-adj-reset="contrast"
+                data-tooltip="Reset Contrast" disabled><i class="fas fa-rotate-left"></i></button>
             </div>
           </div>
         </div>
         <div class="iis-adjust-actions">
-          <button type="button" class="acp-btn acp-btn-sm acp-btn-primary" data-action="adjustApply" disabled><i class="fas fa-check"></i> Apply</button>
-          <button type="button" class="acp-btn acp-btn-sm" data-action="adjustCancel" disabled><i class="fas fa-xmark"></i> Cancel</button>
+          <button type="button" class="sts-btn sts-btn-sm sts-btn-primary" data-action="adjustApply"
+            disabled><i class="fas fa-check"></i> Apply</button>
+          <button type="button" class="sts-btn sts-btn-sm" data-action="adjustCancel"
+            disabled><i class="fas fa-xmark"></i> Cancel</button>
         </div>
       </div>
       <div class="fecc-side-pane" data-fecc-pane="colour">
@@ -90,9 +82,9 @@
   </div>
 
   <footer class="ete-footer">
-    <button type="button" class="acp-btn" data-action="cancel">Cancel</button>
+    <button type="button" class="sts-btn" data-action="cancel">Cancel</button>
     <span class="ete-footer-acts">
-      <button type="button" class="acp-btn ete-save" data-action="save"><i class="fas fa-stamp"></i> Save</button>
+      <button type="button" class="sts-btn ete-save" data-action="save"><i class="fas fa-stamp"></i> Save</button>
     </span>
   </footer>
 </div>

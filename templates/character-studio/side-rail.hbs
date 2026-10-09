@@ -1,0 +1,30 @@
+{{!-- One side's rail of panel tabs, and the empty panes the side panels are built into. The avatar rail sits left
+     of the panes, the token rail right. The spacer anchors Export and Import to the rail's bottom edge. --}}
+<aside class="fecc-side fecc-side-{{#if avatar}}left{{else}}right{{/if}}" data-fecc-side="{{side}}">
+  <div class="fecc-rail">
+    <button type="button" class="fecc-rail-tab" data-fecc-tab="colour"
+      data-tooltip="Colour Tools"><i class="fas fa-palette"></i><span>Colour</span></button>
+    {{#each categories}}
+    <button type="button" class="fecc-rail-tab" data-fecc-tab="parts:{{key}}" data-tooltip-text="{{label}} parts">
+      <i class="fas {{icon}}"></i><span>{{railLabel}}</span>
+    </button>
+    {{/each}}
+    {{#if avatar}}
+    <button type="button" class="fecc-rail-tab fecc-rail-action" data-fecc-action="hairShadow"
+      data-tooltip="Hair Shadow"><i class="fas fa-circle-half-stroke"></i><span>Shadow</span></button>
+    {{/if}}
+    <span class="fecc-rail-spacer"></span>
+    <button type="button" class="fecc-rail-tab" data-fecc-tab="export"
+      data-tooltip="Export this canvas as a PNG"><i class="fas fa-file-export"></i><span>Export</span></button>
+    <button type="button" class="fecc-rail-tab" data-fecc-tab="import"
+      data-tooltip="Import / Convert sprite"><i class="fas fa-file-import"></i><span>Import</span></button>
+  </div>
+  <div class="fecc-side-body">
+    <div class="fecc-side-pane" data-fecc-pane="colour"></div>
+    {{#each categories}}
+    <div class="fecc-side-pane" data-fecc-pane="parts:{{key}}"></div>
+    {{/each}}
+    <div class="fecc-side-pane" data-fecc-pane="export"></div>
+    <div class="fecc-side-pane" data-fecc-pane="import"></div>
+  </div>
+</aside>

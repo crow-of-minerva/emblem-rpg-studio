@@ -1,8 +1,7 @@
-/** @layer character-studio/fecc */
 /*
  * Turn a raw sprite into a palette-indexed FECC layer, whose red channel holds each pixel's palette shade code
- * (utils/palette-pixels.mjs). The import panel (fecc-import-panel.mjs) and the Sprite Importer dialog
- * (fecc-import-manual.mjs) run it in this order:
+ * (utils/palette-pixels.mjs). The import panel (panels/import-panel.mjs) and the Sprite Importer dialog
+ * (panels/fecc-sprite-importer.mjs) run it in this order:
  *   1. decodeForToken draws the source onto a canvas, refusing anything over 256x256.
  *   2. prepareForImport trims and keys out the green background of a 248x160 sprite-sheet cell, checks there is at
  *      least one opaque pixel and at most 64 colours, and counts the colours.
@@ -13,18 +12,12 @@
  * segmentSpriteSheet splits a whole spritesheet into sprites before step 1.
  */
 import { rgbToHsl, hueDistance } from '../../utils/colour.mjs';
+import { READ_BACK } from '../../utils/image.mjs';
 import { SLOTS, activeShadesFor, codeForType, codesFor, slotToPaletteShade } from '../../utils/palette-pixels.mjs';
 
 /* -------------------------------------------- */
 /*  Limits                                      */
 /* -------------------------------------------- */
-
-/**
- * Context options for the import canvases. Each one is read back (colour counts, corner samples, crop bounds), so
- * the contexts are CPU-backed to avoid the browser's repeated-readback warning.
- * @type {object}
- */
-const READ_BACK = { willReadFrequently: true };
 
 /**
  * Largest sprite side that can be imported.
@@ -54,15 +47,20 @@ const MAX_UNIQUE_COLOURS = 64;
 export const REMOVE_SLOT = 0xfffe;
 
 /**
- * An import failure with a `kind`: 'too-large', 'no-opaque' or 'too-many-colours'. The import panel and dialog
- * treat these kinds as expected and show the message as a warning.
+ * A refusal to import art that can't be palette-indexed: too large, nothing opaque, or too many colours. Its
+ * message is a sentence shown to the user.
  */
-class TokenImportError extends Error {
-  /**
-   * @param {string} kind           What went wrong.
-   * @param {string} message        The message shown to the user.
-   */
-  constructor(kind, message) { super(message); this.kind = kind; }
+class TokenImportError extends Error {}
+
+/**
+ * Report a failed import through the calling file's notifier. A refusal shows its own message as a warning, and
+ * anything else is reported as an error.
+ * @param {{validation: Function, failure: Function}} notify  The calling file's Studio notifier.
+ * @param {unknown} error                                     What the import threw.
+ */
+export function reportImportError(notify, error) {
+  if (error instanceof TokenImportError) notify.validation(error.message, error);
+  else notify.failure('The image could not be imported.', error);
 }
 
 /**
@@ -102,7 +100,7 @@ export function decodeForToken(img) {
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   if (w > MAX_DIM || h > MAX_DIM) {
-    throw new TokenImportError('too-large', `Image is ${w}x${h}, but tokens must be ≤ 256x256.`);
+    throw new TokenImportError(`Image is ${w}x${h}, but tokens must be ≤ 256x256.`);
   }
   return imageToCanvas(img);
 }
@@ -137,10 +135,10 @@ export function prepareForImport(canvas) {
     const k = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
     counts.set(k, (counts.get(k) ?? 0) + 1);
   }
-  if (opaque === 0) throw new TokenImportError('no-opaque', 'Image has no opaque pixels.');
+  if (opaque === 0) throw new TokenImportError('Image has no opaque pixels.');
   if (counts.size > MAX_UNIQUE_COLOURS) {
-    throw new TokenImportError('too-many-colours',
-      `Image has ${counts.size} unique colours (max ${MAX_UNIQUE_COLOURS}), so it is not pixel-art-like.`);
+    throw new TokenImportError(
+      `The image has ${counts.size} colours. Pixel art can have at most ${MAX_UNIQUE_COLOURS}.`);
   }
   return { canvas: work, counts };
 }
@@ -150,18 +148,10 @@ export function prepareForImport(canvas) {
 /* -------------------------------------------- */
 
 /**
- * Encode a prepared canvas, for every import (FeccImportPanel._convertOne). Each opaque pixel's red channel takes
- * its shade code from slotMask, with green and blue zeroed, and pixels marked REMOVE_SLOT are cut out. The result is
- * then cropped into the smallest standard square, unless the canvas is already 64x64 or 96x96.
- *
- * The codes are per pixel, not per colour, so two pixels of one colour can get different shades: a sprite that uses
- * one grey for both armour and a sword can still separate them.
- *
- * The dialog's codes are the body table's, so each is written as the code the layer's part type reads as the same
- * shade (codeForType in palette-pixels.mjs).
- *
- * Every pixel with any alpha is encoded, and its alpha is kept. The canvas stores colour premultiplied by alpha, so
- * the code of a semi-transparent pixel can come back off by one and read as a different shade.
+ * Encode a prepared canvas: each pixel with any alpha takes its `slotMask` shade in red, as the layer's part type
+ * codes it, with green and blue zeroed and alpha kept, REMOVE_SLOT pixels are cut out, and the result is cropped into
+ * the smallest standard square. The canvas stores colour premultiplied by alpha, so a semi-transparent pixel's code
+ * can come back off by one.
  * @param {HTMLCanvasElement} canvas      Prepared canvas, changed in place before the crop.
  * @param {Uint16Array} slotMask          One shade code per pixel, from the dialog's buildResult.
  * @param {string} [feccType]             Part type of the layer the pixels become.
@@ -195,10 +185,8 @@ export function applySlotMask(canvas, slotMask, feccType = 'body') {
 /* -------------------------------------------- */
 
 /**
- * Strip the two rows of interface chrome from the top of a sprite-sheet cell and key out its green background. The
- * background colour is the average of the four corners, which are always background, so a cell saved with
- * slightly different colours still keys cleanly. The usual green (#A0C898) is keyed out too, in case the corners
- * aren't background. Both match within 30 per channel.
+ * Strip the two rows of interface chrome from the top of a sprite-sheet cell and key out its green background: the
+ * average of the four corners and the usual #A0C898, each matched within 30 per channel.
  * @param {HTMLCanvasElement} canvas      Source cell.
  * @returns {HTMLCanvasElement}
  */
@@ -227,8 +215,10 @@ function trimAndChromaKey248x160(canvas) {
   const d = imgData.data;
   for (let i = 0; i < d.length; i += 4) {
     const r = d[i], g = d[i + 1], b = d[i + 2];
-    const matchSampled = Math.abs(r - sampled[0]) <= TOL && Math.abs(g - sampled[1]) <= TOL && Math.abs(b - sampled[2]) <= TOL;
-    const matchFallback = Math.abs(r - fallback[0]) <= TOL && Math.abs(g - fallback[1]) <= TOL && Math.abs(b - fallback[2]) <= TOL;
+    const matchSampled = Math.abs(r - sampled[0]) <= TOL && Math.abs(g - sampled[1]) <= TOL
+      && Math.abs(b - sampled[2]) <= TOL;
+    const matchFallback = Math.abs(r - fallback[0]) <= TOL && Math.abs(g - fallback[1]) <= TOL
+      && Math.abs(b - fallback[2]) <= TOL;
     if (matchSampled || matchFallback) d[i + 3] = 0;
   }
   dctx.putImageData(imgData, 0, 0);
@@ -240,15 +230,9 @@ function trimAndChromaKey248x160(canvas) {
 /* -------------------------------------------- */
 
 /**
- * Where the crop moves this canvas's content: the opaque bounding box, the standard square it lands in, and its
- * offset inside that square. FeccImportPanel._processOne uses it to undo the crop, so a sprite taken from a layer,
- * a tab or a sheet lands back where it was drawn.
- *
- * Measure it after applySlotMask. Removed colours are cut out there, which can shrink the bounding box, and
- * applySlotMask changes the prepared canvas in place, so measuring that canvas afterwards gives the crop it applied.
- *
- * Art wider or taller than MAX_ART fits no standard square, so it is refused here rather than cut off. The Sprite
- * Importer blocks such a panel before import (blockReason), so this is only reached by a caller that skips it.
+ * Where the crop moves this canvas's content: the opaque bounding box, the standard square it lands in and its offset
+ * there, so an import can land back where it was drawn. Measure it after applySlotMask, which cuts removed colours out
+ * in place; art larger than MAX_ART fits no square and is refused.
  * @param {HTMLCanvasElement} canvas      Encoded canvas.
  * @returns {object}
  */
@@ -270,11 +254,11 @@ export function standardSquareGeometry(canvas) {
       }
     }
   }
-  if (maxX < 0) throw new TokenImportError('no-opaque', 'No opaque pixels after conversion.');
+  if (maxX < 0) throw new TokenImportError('No opaque pixels after conversion.');
   const ew = maxX - minX + 1;
   const eh = maxY - minY + 1;
   if (ew > MAX_ART || eh > MAX_ART) {
-    throw new TokenImportError('too-large', oversizeArtMessage(ew, eh));
+    throw new TokenImportError(oversizeArtMessage(ew, eh));
   }
   const target = (ew <= 64 && eh <= 64) ? 64
                : (ew <= 96 && eh <= 96) ? 96
@@ -400,13 +384,8 @@ function classifyCluster(cluster) {
 const SLOT_RAMPS = Object.fromEntries(SLOTS.map(({ key }) => [key, [...codesFor(key)].reverse()]));
 
 /**
- * Spread a palette's colours across its five codes.
- *
- * Skin fills from the lighter end, because Fire Emblem skin is usually light, neutral and darker, with deeper
- * shadows only now and then. Filling from the dark end would make a normal three-shade face look heavily shadowed.
- *
- * Other palettes spread evenly with both ends used, and a lone colour takes the middle code, so it recolours to the
- * palette's neutral.
+ * Spread a palette's colours across its five codes. Skin fills from the lighter end, since Fire Emblem skin is mostly
+ * light with rare deep shadows; other palettes spread evenly with both ends used, and a lone colour takes the middle.
  * @param {string} cat            Palette to assign into.
  * @param {object[]} list         The palette's colours, darkest first.
  * @param {Map} out               Colour-to-code map, written into.
@@ -433,13 +412,9 @@ function assignSlots(cat, list, out) {
 }
 
 /**
- * Guess a shade code for each colour, for the Sprite Importer's Auto-classify Rest button (_autoSortRest in
- * fecc-import-manual.mjs), which passes only the colours still unplaced. The most frequent very dark colour becomes
- * the outline. The rest are grouped into ramps and each ramp is given a palette. A ramp that doesn't fit in its
- * palette's five codes goes to the first of hair, accessory and eye with room, and stays put when none has room.
- *
- * Only palettes the part type reads are used. On a face or accessory layer a ramp meant for metal goes to the
- * accessory palette, which those layers read from metal's codes, and hair takes no overflow.
+ * Guess a shade code for each colour, for Auto-classify Rest: the most frequent very dark colour becomes the outline,
+ * and the rest form ramps, each given a palette the part type reads. A ramp too long for its palette moves to the
+ * first of hair, accessory and eye with room, or stays put.
  * @param {Map<number, number>} counts            Pixel count per colour key.
  * @param {string} [feccType]                     Part type the colours are imported as.
  * @returns {Map<number, number>}                 Colour keys to shade codes.
@@ -454,9 +429,8 @@ export function classifyPalette(counts, feccType = 'body') {
     entries.push({ k, n, r, g, b, h: hsl.h, s: hsl.s, l: hsl.l, lum: luminance(r, g, b) });
   }
 
-  // Only the most frequent very dark colour becomes the outline. Other dark
-  // shades stay with their ramp, since a leather or cloth ramp's darkest
-  // shade is often near black.
+  // Only the most frequent very dark colour becomes the outline. Other dark shades stay with their ramp, since a
+  // leather or cloth ramp's darkest shade is often near black.
   let outline = null;
   const darks = entries.filter(e => e.lum < 50);
   if (darks.length) {
@@ -505,7 +479,7 @@ export function classifyPalette(counts, feccType = 'body') {
  * How close two components may sit, in pixels, before the sheet segmenter merges them into one sprite.
  * @type {number}
  */
-const SEGMENT_PROXIMITY = 16;
+export const SEGMENT_PROXIMITY = 16;
 
 /**
  * The fewest opaque pixels a merged component needs to count as a sprite rather than a stray speck.
@@ -514,21 +488,14 @@ const SEGMENT_PROXIMITY = 16;
 const SEGMENT_MIN_PIXELS = 4;
 
 /**
- * Split a spritesheet into its sprites, for the import panel's Import from Spritesheet button. Connected pixels form
- * pieces, and pieces closer than SEGMENT_PROXIMITY are merged, so a detached hat or weapon glint stays with its
- * owner. Sheets this studio builds (createSheetFromCanvases) leave at least that much space between sprites, so the
- * merge never joins two of them.
- *
- * Each returned canvas holds only its own sprite's pixels, picked by piece rather than by bounding box, so another
- * sprite that reaches into its box isn't copied along.
- * @param {HTMLCanvasElement} sheet               The sheet.
- * @returns {object[]}                            Sprites in reading order, with their positions on the sheet.
+ * Label the sheet's 8-way connected pieces of opaque pixels.
+ * @param {Uint8ClampedArray} data               The sheet's RGBA pixels.
+ * @param {number} w                              Sheet width.
+ * @param {number} h                              Sheet height.
+ * @returns {{labels: Int32Array, comps: object[]}} Each pixel's piece index (-1 when transparent), and each piece's
+ *   bounding box and pixel count.
  */
-export function segmentSpriteSheet(sheet) {
-  const w = sheet.width, h = sheet.height;
-  const data = sheet.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
-
-  // Pass 1: 8-way connected components over the alpha mask.
+function labelPieces(data, w, h) {
   const labels = new Int32Array(w * h).fill(-1);
   const comps = [];
   const stack = [];
@@ -563,9 +530,25 @@ export function segmentSpriteSheet(sheet) {
       }
     }
   }
+  return { labels, comps };
+}
 
-  // Pass 2: proximity merge via union-find. Boxes each expanded by half the
-  // threshold overlap exactly when the raw boxes are closer than SEGMENT_PROXIMITY.
+/**
+ * Split a spritesheet into its sprites: connected pixels form pieces, and pieces closer than SEGMENT_PROXIMITY merge,
+ * so a detached hat stays with its owner; sheets this studio builds space their sprites further apart. Each canvas
+ * holds only its own sprite's pieces, not everything in its bounding box.
+ * @param {HTMLCanvasElement} sheet               The sheet.
+ * @returns {object[]}                            Sprites in reading order, with their positions on the sheet.
+ */
+export function segmentSpriteSheet(sheet) {
+  const w = sheet.width, h = sheet.height;
+  const data = sheet.getContext('2d', READ_BACK).getImageData(0, 0, w, h).data;
+
+  // Pass 1: 8-way connected components over the alpha mask.
+  const { labels, comps } = labelPieces(data, w, h);
+
+  // Pass 2: proximity merge via union-find. Boxes each expanded by half the threshold overlap exactly when the raw
+  // boxes are closer than SEGMENT_PROXIMITY.
   const parent = comps.map((_, i) => i);
   const find = (i) => {
     while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
@@ -604,7 +587,7 @@ export function segmentSpriteSheet(sheet) {
     const c = document.createElement('canvas');
     c.width = gw;
     c.height = gh;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
+    const ctx = c.getContext('2d', READ_BACK);
     const img = ctx.createImageData(gw, gh);
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {

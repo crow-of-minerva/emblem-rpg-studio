@@ -1,6 +1,9 @@
-/** @layer foundry */
+/*
+ * The Trusted Player allowlist setting and the GM's window for editing it, registered on init.
+ */
+
 import { MODULE_ID, STUDIO_ACCESS_MENU, STUDIO_ACCESS_TEMPLATE, TRUSTED_ALLOWLIST_SETTING } from '../constants.mjs';
-import { STUDIO_REFUSALS, allowlistCandidates, allowlistFromSelection, canManageAllowlist } from '../admission.mjs';
+import { STUDIO_REFUSALS, allowlistCandidates, allowlistFromSelection, canManageAllowlist } from '../access-rules.mjs';
 import { announceStudioAccessChange, readTrustedAllowlist, refuseStudio } from './access.mjs';
 import { createStudioNotifier } from './notify.mjs';
 
@@ -16,7 +19,7 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 /* -------------------------------------------- */
 
 /**
- * Register the Trusted Player allowlist and the Gamemaster's window for it, on init (foundry/hooks.mjs).
+ * Register the Trusted Player allowlist and the Gamemaster's window for it, on init (hooks.mjs).
  *
  * The list is a hidden world setting, empty by default, so Studio starts closed to every Trusted Player. The window
  * is a restricted menu: Players and Trusted Players never see it, and an Assistant GM sees it read-only.
@@ -53,7 +56,7 @@ export function registerStudioAccessSettings() {
  * Only the Gamemaster can save it. An Assistant GM can open it to see who is listed, because Foundry shows restricted
  * menus to every user who may modify world settings.
  */
-export class StudioAccessConfig extends HandlebarsApplicationMixin(ApplicationV2) {
+class StudioAccessConfig extends HandlebarsApplicationMixin(ApplicationV2) {
   /* -------------------------------------------- */
   /*  Configuration                               */
   /* -------------------------------------------- */
@@ -98,7 +101,7 @@ export class StudioAccessConfig extends HandlebarsApplicationMixin(ApplicationV2
     try {
       await game.settings.set(MODULE_ID, TRUSTED_ALLOWLIST_SETTING, [...allowlistFromSelection(game.users, ticked)]);
     } catch (error) {
-      notify.failure('The Studio allowlist could not be saved.', error);
+      notify.failure('The Trusted Player Studio Access list could not be saved.', error);
     }
   }
 }

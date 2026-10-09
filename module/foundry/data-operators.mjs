@@ -1,4 +1,6 @@
-/** @layer foundry */
+/*
+ * Foundry's update operators, for the Studio files that write documents.
+ */
 
 /**
  * An update that deletes a key outright instead of merging over it, using v14's `ForcedDeletion` operator.

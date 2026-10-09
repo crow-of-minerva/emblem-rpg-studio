@@ -1,0 +1,14 @@
+{{!-- The actor switcher in the footer: a pip per loaded actor. Select and close are sibling buttons, because a
+     close button nested inside the select button would have its click taken as the select button's. --}}
+{{#each pips}}
+<div class="ets-actor-pip-wrap{{#if active}} is-active{{/if}}" data-actor-id="{{id}}">
+  <button type="button" class="ets-actor-pip" data-action="selectActor" data-actor-id="{{id}}">
+    <img src="{{img}}" alt="">
+    <span class="ets-actor-pip-name">{{name}}</span>
+  </button>
+  <button type="button" class="ets-actor-pip-close" data-action="closeActor" data-actor-id="{{id}}"
+    data-tooltip="Unload this actor">
+    <i class="fas fa-xmark"></i>
+  </button>
+</div>
+{{/each}}

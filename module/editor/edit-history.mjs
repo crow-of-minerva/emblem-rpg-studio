@@ -1,4 +1,6 @@
-/** @layer editor */
+/*
+ * The undo and redo stacks each canvas view keeps. What each kind of undo entry stores is in undo-kinds.mjs.
+ */
 
 /* -------------------------------------------- */
 /*  Constants                                   */
@@ -33,16 +35,9 @@ export const HISTORY_DIRECTION = Object.freeze({ UNDO: 'undo', REDO: 'redo' });
 /* -------------------------------------------- */
 
 /**
- * A canvas view's undo and redo stacks, its edit counter, and the open run of arrow-key nudges that becomes one
- * entry. Each CanvasView (canvas-view.mjs) owns one. The view builds and applies the entries (pixels, transform,
- * transform-multi, palette, layer-image, layers-state). This class only decides what is kept, in what order, and
- * what counts as one edit.
- *
- * `serial` is the counter the unsaved-changes check reads (`dirty-state.mjs`, through `CanvasView#_editSerial`). The
- * stack depth can't stand in for it, because the stack stops growing at the limit. The counter rises with every
- * recorded edit and never goes down.
- *
- * Nothing here touches the DOM or a layer's pixels.
+ * A canvas view's undo and redo stacks, its edit counter, and the open run of arrow-key nudges that becomes one entry;
+ * what each entry stores is in undo-kinds.mjs. `serial`, which the unsaved-changes check reads, rises with every
+ * recorded edit and never falls, since the stack depth stops growing at its limit.
  */
 export class EditHistory {
   /* -------------------------------------------- */
@@ -139,8 +134,8 @@ export class EditHistory {
   /* -------------------------------------------- */
 
   /**
-   * Forget every entry but keep the edit counter. CanvasView calls it after a fresh load and a world resize, so undo
-   * can't step back past them. The counter is kept because the view still differs from its last save.
+   * Forget every entry but keep the edit counter. Use it after a fresh load or a world resize, so undo can't step
+   * back past them. The counter is kept because the view still differs from its last save.
    */
   clearStacks() {
     this._undo.length = 0;
@@ -197,8 +192,8 @@ export class EditHistory {
   /* -------------------------------------------- */
 
   /**
-   * Close the open run of nudges without recording it, and cancel its timer. CanvasView#destroy calls it, since no
-   * one can undo on a destroyed view and the timer shouldn't outlive it.
+   * Close the open run of nudges without recording it, and cancel its timer. Use it when the view is destroyed,
+   * since nobody can undo there and the timer shouldn't outlive it.
    * @returns {{layerId: string, snapshot: object}|null}    The run that closed, or null when none was open.
    */
   dropNudge() {

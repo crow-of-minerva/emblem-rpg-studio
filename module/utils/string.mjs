@@ -1,4 +1,6 @@
-/** @layer utils */
+/*
+ * Name helpers: slugs for file names and identifiers, and a free name among names already taken.
+ */
 
 /**
  * Slugify for a filename or a URL segment: punctuation dropped, runs of whitespace collapsed to single hyphens.
@@ -48,4 +50,16 @@ export function disambiguateName(name, taken) {
   let n = 2;
   while (taken.has(`${name}_${n}`)) n++;
   return `${name}_${n}`;
+}
+
+/* -------------------------------------------- */
+
+/**
+ * A case-insensitive lookup for disambiguateName over a set of lower-cased names, so a name differing from a taken
+ * one only in case counts as taken.
+ * @param {Set<string>} lowerNames  The names in use, lower-cased.
+ * @returns {{has: (name: string) => boolean}}
+ */
+export function caseFoldedLookup(lowerNames) {
+  return { has: name => lowerNames.has(String(name).toLowerCase()) };
 }

@@ -1,9 +1,9 @@
-/** @layer character-studio/fecc */
 /*
  * The Shadow button on Character Studio's avatar rail. It paints a contact shadow into the face layer where the hair
  * meets the skin, written as skin shade codes so it follows later changes to the skin palette.
  */
 import { createStudioNotifier } from '../../foundry/notify.mjs';
+import { readPixels } from '../../editor/pixels.mjs';
 
 /* -------------------------------------------- */
 /*  Reporting                                   */
@@ -60,44 +60,20 @@ function renderLayerSourceInComposite(layer, size) {
 /* -------------------------------------------- */
 
 /**
- * Paint a contact shadow into the face where hair meets skin, for the Shadow button on Character Studio's avatar rail
- * (_mountTabFeccPanels). Each hair-edge pixel writes a one-pixel darker skin band into the face next to it, plus a
- * one-pixel neutral band beyond that for falloff, checking the four straight neighbours only.
- *
- * The bands are written as skin shade codes, not colours, so a later change to the skin shades recolours them too.
- * They go into the source of the topmost face layer, which _ensureEditableImage turns into an editable canvas, so
- * the shadow is saved with the layer. Only the topmost hair and face layers are used, although a canvas can hold
- * several of each.
- *
- * Writes are counted once per face-source pixel, since an upscaled face maps many composite pixels onto one, and
- * the shadow band wins where the two bands meet. The face's recolour cache is dropped afterwards.
- * @param {object} view                   Canvas view to operate on.
- * @returns {boolean}                     False, with a warning, if either layer is missing.
+ * Write the shadow and falloff bands into the face layer's pixel data, for every hair-edge pixel of the composite.
+ * Each face-source pixel is counted once, since an upscaled face maps many composite pixels onto one, and the shadow
+ * band wins where the two bands meet.
+ * @param {object} face                   The topmost face layer.
+ * @param {Uint8ClampedArray} faceData    The face source's pixels, changed in place.
+ * @param {Uint8ClampedArray} hairCompData The hair drawn at composite size. Only its alpha is read.
+ * @param {number} size                   Composite size.
+ * @returns {number}                      How many face-source pixels were written.
  */
-export function applyHairShadow(view) {
-  const hair = findTopFecc(view, 'hair');
-  const face = findTopFecc(view, 'face');
-  if (!hair) { notify.warn('No Hair layer on this side.'); return false; }
-  if (!face) { notify.warn('No Face layer on this side.'); return false; }
-
-  const size = view.size;
-
-  // The hair drawn at composite size. Only its alpha is read.
-  const hairComposite = renderLayerSourceInComposite(hair, size);
-  const hairCompData  = hairComposite.getContext('2d').getImageData(0, 0, size, size).data;
-
-  view.pushUndoSnapshot(face);
-
-  // Slots are read from and written into the face's own indexed source, which
-  // _ensureEditableImage turns into a writable canvas.
-  const faceCanvas = view._ensureEditableImage(face);
-  const faceCtx    = faceCanvas.getContext('2d');
-  const faceImg    = faceCtx.getImageData(0, 0, face.width, face.height);
-  const faceData   = faceImg.data;
-
-  /** The face-source pixel under composite point (px, py) and its slot, or null
-   * outside the face or on a transparent pixel. The inverse transform is the
-   * expensive part, so only hair-edge pixels call this. */
+function writeShadowBands(face, faceData, hairCompData, size) {
+  /**
+   * The face-source pixel under composite point (px, py) and its slot, or null outside the face or on a transparent
+   * pixel. The inverse transform is the expensive part, so only hair-edge pixels call this.
+   */
   function faceSlotAt(px, py) {
     const { x, y } = face.canvasToLayer(px, py, size);
     const fx = Math.floor(x), fy = Math.floor(y);
@@ -115,13 +91,13 @@ export function applyHairShadow(view) {
     faceData[i + 3] = 255;
   }
 
-  // Face-source pixels already written, per band. A shadow write removes a
-  // pixel from the transition set, so the shadow band wins.
+  // Face-source pixels already written, per band. A shadow write removes a pixel from the transition set, so the shadow
+  // band wins.
   const wroteShadow     = new Set();
   const wroteTransition = new Set();
 
-  // The four straight neighbours. Each direction gives a shadow pixel one step
-  // off the hair and a transition (falloff) pixel two steps off.
+  // The four straight neighbours. Each direction gives a shadow pixel one step off the hair and a transition (falloff)
+  // pixel two steps off.
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
   for (let py = 0; py < size; py++) {
@@ -161,16 +137,44 @@ export function applyHairShadow(view) {
     }
   }
 
-  faceCtx.putImageData(faceImg, 0, 0);
+  return wroteShadow.size + wroteTransition.size;
+}
 
-  // Source changed: drop the recolour cache so it rebuilds from the palette.
-  face._recolourCacheKey = null;
-  face._recolourCache    = null;
-  view._rerecolourLayer(face);
-  view.draw();
-  view._renderLayersPanel();
+/**
+ * Paint a contact shadow into the topmost face layer where the topmost hair layer meets it: a darker skin band one
+ * pixel wide beside each hair-edge pixel, then a neutral band, checking the four straight neighbours. The bands are
+ * skin shade codes written into the face layer's source, so they recolour with the skin and save with the layer.
+ * @param {object} view                   Canvas view to operate on.
+ * @returns {boolean}                     False, with a notice, if either layer is missing or its pixels can't be
+ *                                        read.
+ */
+export function applyHairShadow(view) {
+  view.commitPendingEdits();
+  const hair = findTopFecc(view, 'hair');
+  const face = findTopFecc(view, 'face');
+  if (!hair) { notify.warn('No Hair layer on this side.'); return false; }
+  if (!face) { notify.warn('No Face layer on this side.'); return false; }
 
-  const wrote = wroteShadow.size + wroteTransition.size;
-  notify.info(`Shadow applied (${wrote} face pixels touched).`);
+  const size = view.size;
+
+  // The hair drawn at composite size. Only its alpha is read.
+  const hairCompData = readPixels(renderLayerSourceInComposite(hair, size), 0, 0, size, size)?.data;
+  if (!hairCompData) return false;
+
+  view.pushUndoSnapshot(face);
+
+  // Slots are read from and written into the face's own indexed source, which ensureEditableImage turns into a writable
+  // canvas.
+  const faceCanvas = view.ensureEditableImage(face);
+  const faceImg    = readPixels(faceCanvas, 0, 0, face.width, face.height);
+  if (!faceImg) return false;
+
+  const wrote = writeShadowBands(face, faceImg.data, hairCompData, size);
+
+  faceCanvas.getContext('2d').putImageData(faceImg, 0, 0);
+
+  view.layerChanged(face);
+
+  notify.info(`Applied the shadow to ${wrote} face pixel${wrote === 1 ? '' : 's'}.`);
   return true;
 }

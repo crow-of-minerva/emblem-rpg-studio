@@ -1,23 +1,27 @@
-/** @layer utils */
+/*
+ * Lets a vertical mouse wheel scroll a strip that overflows sideways, such as Character Studio's tab strips.
+ */
 
 /* -------------------------------------------- */
 /*  Horizontal Scrolling                        */
 /* -------------------------------------------- */
 
 /**
- * Let a vertical mouse wheel scroll a horizontally-overflowing element.
- *
- * Browsers map the wheel to horizontal scrolling only for trackpads and shift+wheel, so a single-row strip that
- * scrolls sideways is otherwise unreachable with a plain mouse.
- *
- * Idempotent per element, and inert while the element fits or while Ctrl is held, so neither a page zoom nor the
- * scroll of whatever sits behind it is swallowed.
+ * The elements that already have the wheel listener.
+ * @type {WeakSet<HTMLElement>}
+ */
+const wiredElements = new WeakSet();
+
+/**
+ * Let a vertical mouse wheel scroll a horizontally-overflowing element, which browsers otherwise do only for a
+ * trackpad or Shift+wheel. The wheel passes through while the element fits or Ctrl is held, and a second call does
+ * nothing.
  * @param {HTMLElement} el        An element that scrolls on its x axis.
  * @returns {void}
  */
 export function wireHorizontalWheelScroll(el) {
-  if (!el || el._horizontalWheelScrollWired) return;
-  el._horizontalWheelScrollWired = true;
+  if (!el || wiredElements.has(el)) return;
+  wiredElements.add(el);
   el.addEventListener('wheel', (event) => {
     if (event.ctrlKey) return;
     if (el.scrollWidth <= el.clientWidth) return;

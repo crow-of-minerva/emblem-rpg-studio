@@ -1,4 +1,7 @@
-/** @layer editor */
+/*
+ * The geometry of a pixel selection, with no DOM access: its mask, the offset of a selection being moved, and where
+ * its outline (the marquee) is drawn.
+ */
 
 /* -------------------------------------------- */
 /*  Constants                                   */
@@ -26,9 +29,9 @@ export const NO_OFFSET = Object.freeze({ x: 0, y: 0 });
 
 /**
  * How far a selection has been carried from the pixels it was lifted from, in the layer image's own pixels, read
- * from its `ox` and `oy`. While a move floats, the lifted pixels (`CanvasView#_floating`) and the mask both sit at
- * this offset, kept together by `moveFloatingTo`. `CanvasView#_commitMove` and `_cancelMove` reset it to zero, so
- * outside a move the offset is always the origin.
+ * from its `ox` and `oy`. While a move floats, the lifted pixels (`PixelSelection#_floating`) and the mask both sit
+ * at this offset, kept together by `moveFloatingTo`. `PixelSelection#_commitMove` and `cancelMove` reset it to zero,
+ * so outside a move the offset is always the origin.
  * @param {object|null} selection         The live selection.
  * @returns {{x: number, y: number}}
  */
@@ -40,7 +43,7 @@ export function selectionOffset(selection) {
 
 /**
  * Carry a floating move to a new offset, keeping the lifted pixels and the marquee together. Both must move at once:
- * `CanvasView#_drawFloatingTo` draws from the float's offset and the marquee's transform (`layerTransformAttr`)
+ * `PixelSelection#drawFloatingTo` draws from the float's offset and the marquee's transform (`layerTransformAttr`)
  * reads the selection's, so writing only one leaves the outline behind the pixels.
  * @param {object|null} selection         The live selection.
  * @param {object|null} floating          The lifted pixels, if a move is in progress.
@@ -100,9 +103,8 @@ export function maskContains(mask, w, h, lx, ly) {
 /* -------------------------------------------- */
 
 /**
- * Copy a mask into a frame of another size at a given origin, dropping whatever falls outside. When a layer grows
- * to the workspace, `CanvasView#_expandLayerToWorkspace` uses it for the float's original mask and for the live
- * selection. `CanvasView#_commitMove` uses it within one frame to put the mask where the drag left the pixels.
+ * Copy a mask into a frame of another size at a given origin, dropping whatever falls outside: for example when a
+ * layer grows to the full grid, or to put the mask where a drag left the pixels.
  * @param {Uint8Array} mask       The mask to copy.
  * @param {number} srcW           Its width.
  * @param {number} srcH           Its height.
@@ -129,11 +131,9 @@ export function shiftMask(mask, srcW, srcH, dstW, dstH, ox, oy) {
 /* -------------------------------------------- */
 
 /**
- * Where a layer's existing content lands once `CanvasView#_expandLayerToWorkspace` redraws it onto the full grid.
- * It is worked out in layer space: the layer keeps its rotation, scale and flip, so its position on the canvas has
- * to go back through that transform before it can be used as a layer-space offset. Two `canvasToLayer` results
- * about the canvas centre, subtracted, give that inverse with the translation cancelled out. Using the canvas
- * offset directly would move a flipped layer by twice its offset and a rotated one off its pivot.
+ * Where a layer's existing content lands, in layer space, once `CanvasView#expandLayerToGrid` redraws it onto the full
+ * grid. The canvas offset goes back through the layer's rotation, scale and flip as the difference of two
+ * `canvasToLayer` results about the canvas centre; used directly, it would move a flipped layer by twice its offset.
  * @param {object} layer          The layer being expanded.
  * @param {number} size           The canvas grid's side length, which is the new raster's size.
  * @param {number} oldW           The layer's current width.
@@ -197,7 +197,7 @@ export function seedSelection(layer, mode, current) {
 
 /**
  * The SVG transform that matches how a layer is drawn, so the marquee lands on the pixels it outlines. It is the
- * same transform `ImageLayer#draw` and `CanvasView#_drawFloatingTo` apply, flip included, so a selection on a
+ * same transform `ImageLayer#draw` and `PixelSelection#drawFloatingTo` apply, flip included, so a selection on a
  * flipped layer wraps the mirrored pixels the user sees. The floating offset is in the layer image's own pixels, so
  * it goes inside the transform, next to the shift to the image's origin.
  * @param {object} layer                          The layer.
@@ -240,7 +240,7 @@ export function selectionInset({ displayWidth, size, zoom, layerScale }) {
 
 /**
  * Trace a mask into an outline path, in layer coordinates. It visits every mask cell, and the overlay is redrawn on
- * every pointer move, so `CanvasView#_selectionPathFor` caches the result against the mask, layer and inset instead
+ * every pointer move, so `SelectionOverlay#_pathFor` caches the result against the mask, layer and inset instead
  * of rebuilding it each frame.
  * @param {Uint8Array} mask       The mask.
  * @param {number} w              Its width.

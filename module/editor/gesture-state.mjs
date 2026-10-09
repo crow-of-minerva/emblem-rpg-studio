@@ -1,36 +1,23 @@
-/** @layer editor */
+/*
+ * The pointer gesture a CanvasView is in: none, a camera pan, or the active tool's drag. The view's press, move and
+ * release handlers read it to agree on which drag is running. Runs on every client that opens a Studio window.
+ */
 
 /* -------------------------------------------- */
-/*  Gesture Names                               */
+/*  Gesture names                               */
 /* -------------------------------------------- */
 
 /** No pointer gesture is running. */
 const GESTURE_IDLE = 'idle';
 
-/** The pan tool is moving or rotating the selected layer, or moving every visible layer at once. */
-export const GESTURE_LAYER_DRAG = 'layer-drag';
-
 /** The camera is being dragged: middle mouse anywhere, or the backdrop of a spritesheet. */
 export const GESTURE_VIEW_PAN = 'view-pan';
 
-/** A pixel tool owns the pointer: the rectangle marquee, the brush, the line or a floating move. */
+/**
+ * The active tool owns the pointer: a pan tool layer drag, a rectangle select, a brush or line stroke, or a floating
+ * move.
+ */
 export const GESTURE_TOOL_DRAG = 'tool-drag';
-
-/* -------------------------------------------- */
-
-/**
- * The layer drag's variants, chosen at press time from the modifier keys.
- * @type {Object<string, string>}
- */
-export const LAYER_DRAG = Object.freeze({ PAN: 'pan', ROTATE: 'rotate', PAN_ALL: 'pan-all' });
-
-/* -------------------------------------------- */
-
-/**
- * The tool drag's variants, one per pixel tool that tracks the pointer.
- * @type {Object<string, string>}
- */
-export const TOOL_DRAG = Object.freeze({ RECT: 'rect', BRUSH: 'brush', LINE: 'line', MOVE: 'move' });
 
 /* -------------------------------------------- */
 
@@ -41,23 +28,19 @@ export const TOOL_DRAG = Object.freeze({ RECT: 'rect', BRUSH: 'brush', LINE: 'li
  * @type {Object<string, string[]>}
  */
 const GESTURE_TRANSITIONS = Object.freeze({
-  [GESTURE_IDLE]:       Object.freeze([GESTURE_LAYER_DRAG, GESTURE_VIEW_PAN, GESTURE_TOOL_DRAG]),
-  [GESTURE_LAYER_DRAG]: Object.freeze([GESTURE_IDLE]),
-  [GESTURE_VIEW_PAN]:   Object.freeze([GESTURE_IDLE]),
-  [GESTURE_TOOL_DRAG]:  Object.freeze([GESTURE_IDLE])
+  [GESTURE_IDLE]:      Object.freeze([GESTURE_VIEW_PAN, GESTURE_TOOL_DRAG]),
+  [GESTURE_VIEW_PAN]:  Object.freeze([GESTURE_IDLE]),
+  [GESTURE_TOOL_DRAG]: Object.freeze([GESTURE_IDLE])
 });
 
 /* -------------------------------------------- */
-/*  Gesture State                               */
+/*  Gesture state                               */
 /* -------------------------------------------- */
 
 /**
- * Which pointer gesture a canvas is in, which pointer started it, and the data stored with it. Each CanvasView
- * (canvas-view.mjs) owns one, and its pointer down, move and up handlers all read it to decide which drag is running.
- * The data is whatever the gesture's handlers stored at press time (the grabbed layer and its starting transform,
- * the camera's starting pan, or the tool's stroke state). This class never reads inside it.
- *
- * Nothing here touches the DOM. CanvasView handles pointer capture, cursors and listeners around `begin` and `end`.
+ * Which pointer gesture a CanvasView is in, which pointer started it, and the data stored at the press, such as the
+ * camera's starting pan or a tool's drag data, which this class never reads. It touches no DOM: CanvasView handles
+ * pointer capture, cursors and listeners around `begin` and `end`.
  */
 export class GestureState {
   /* -------------------------------------------- */
@@ -89,19 +72,13 @@ export class GestureState {
   get idle() { return this._name === GESTURE_IDLE; }
 
   /**
-   * The layer drag's data, or null when some other gesture (or none) is running.
-   * @type {object|null}
-   */
-  get layerDrag() { return this._name === GESTURE_LAYER_DRAG ? this._data : null; }
-
-  /**
    * The camera pan's data, or null when some other gesture (or none) is running.
    * @type {object|null}
    */
   get viewPan() { return this._name === GESTURE_VIEW_PAN ? this._data : null; }
 
   /**
-   * The tool drag's data, or null when some other gesture (or none) is running.
+   * The tool drag's data, `{ tool, drag }`, or null when some other gesture (or none) is running.
    * @type {object|null}
    */
   get toolDrag() { return this._name === GESTURE_TOOL_DRAG ? this._data : null; }
@@ -130,9 +107,8 @@ export class GestureState {
   /* -------------------------------------------- */
 
   /**
-   * Return to idle and report what was running. CanvasView#_endGesture uses the record to finish the gesture and
-   * release its pointer (on pointerup, pointercancel, window blur, recentring and teardown). CanvasView#setTool also
-   * calls it to drop a tool drag without finishing it.
+   * Return to idle and report what was running, so the view can finish the gesture and release its pointer, or drop
+   * a pixel tool's drag without finishing it when the tool changes.
    * @returns {{name: string, data: object|null, pointerId: number|null}|null}   Null when nothing was running.
    */
   end() {

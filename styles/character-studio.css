@@ -1,13 +1,20 @@
 /* ===========================================================
  * Emblem Character Studio
- * Studio-specific chrome only (tab strips, actor switcher,
- * tab controls row, empty state). The shared .ete-* editor
- * styles used inside each tab pane are in sprite-studio.css.
+ * Studio-specific chrome only (tab strips, actor switcher, tab controls row, empty state). The shared .ete-* editor
+ * styles used inside each tab pane are in editor.css.
  * =========================================================== */
+/* The window can't be made shorter than 915px, the height it opens at, which leaves the canvases their 412px floor
+ * (editor.css). On a screen shorter than that, the minimum is the screen's height and the canvases drop their floor
+ * (below), so the footer and the layer strips stay on screen. The max-height lets Expand fill the screen, where
+ * core's own rule leaves room for the hotbar. */
 .emblem-character-studio {
-  max-height: 100vh !important;
+  max-height: 100vh;
   min-width: 900px;
-  min-height: 915px;
+  min-height: min(915px, 100vh);
+}
+
+@media (max-height: 914px) {
+  .emblem-character-studio .ete-canvas-area { min-height: 0; }
 }
 
 .emblem-character-studio .window-content {
@@ -16,8 +23,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--sts-ground);
-  color: var(--sts-tx);
+  background: var(--sts-window-background);
+  color: var(--sts-text);
 }
 
 .ets-root {
@@ -26,12 +33,17 @@
   flex: 1 1 auto;
   min-height: 0;
 }
-.ets-root.is-actor-drop {
-  background: var(--sts-sel);
-  box-shadow: inset 0 0 0 1px var(--sts-gold);
+/* The window frame gets is-actor-drop while an Actor from the sidebar is dragged over it. The border is an outline
+ * because, unlike an inset box-shadow, it is drawn over the children's backgrounds rather than under them. */
+.emblem-character-studio.is-actor-drop .ets-root {
+  background: var(--sts-highlight);
+  outline: 1px solid var(--sts-gold);
+  outline-offset: -1px;
 }
 
 /* ---------- Empty state ---------- */
+/* No background of its own: the window content already paints the ground colour, and the drop highlight on
+ * .ets-root has to show through. */
 .ets-empty {
   flex: 1 1 auto;
   display: flex;
@@ -39,15 +51,14 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: var(--sts-ground);
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
 }
 .ets-empty-msg {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
 }
 
 /* ---------- Loaded-actor shell ---------- */
@@ -61,10 +72,8 @@
 }
 
 /* ---------- Tabs strip ---------- */
-/* `flex-shrink: 0` here and on the controls / footer rows is load-bearing:
- * a tall side-rail body (the Parts panel's ~12k-pixel grid) pushes an outsized
- * min-content into the column and flex would shrink these zero-grow rows to
- * nothing. Tab content absorbs the squeeze instead (overflow:hidden clips). */
+/* `flex-shrink: 0` here and on the controls and footer rows keeps them at full height. A tall side panel, such as the
+ * Parts grid, raises the column's minimum height, and the tab content shrinks and clips instead of these rows. */
 .ets-tabs-strip {
   display: flex;
   align-items: center;
@@ -76,29 +85,27 @@
 }
 .ets-tabs-strip::-webkit-scrollbar { display: none; }
 
-/* Each tab is a draggable wrap around one button. The wrap draws the
- * resting and active chip; the button is transparent. */
+/* Each tab is a draggable wrap around one button. The wrap draws the resting and active chip; the button is
+ * transparent. */
 .ets-tab-wrap {
   display: inline-flex;
   align-items: center;
-  /* Tabs keep their full label and the strip scrolls instead: without this
-   * the default flex-shrink squeezes every pill and the wrap's overflow:hidden
-   * clips the names mid-word. Same reason on .ets-tab-add / .ets-class-tab. */
+  /* Tabs keep their full label and the strip scrolls instead. A shrunk tab would clip its name mid-word, since the
+   * wrap hides overflow. The add button and the class tabs do the same. */
   flex: 0 0 auto;
-  background: var(--sts-rest);
+  background: var(--sts-tab-background);
   border: none;
   border-radius: 3px;
   overflow: hidden;
   transition: background 80ms ease, color 80ms ease;
 }
-.ets-tab-wrap:hover { background: var(--sts-sel); }
+.ets-tab-wrap:hover { background: var(--sts-highlight); }
 .ets-tab-wrap.is-active {
-  background: var(--sts-ctrl);
-  box-shadow: var(--sts-chip-fx);
+  background: var(--sts-control-background);
+  box-shadow: var(--sts-chip-shadow);
 }
 .ets-tab-wrap.is-unbound { font-style: italic; opacity: 0.85; }
-/* Spritesheet tabs read as a distinct kind, not just another scratch
- * tab: upright gold label + grid icon. */
+/* A spritesheet tab has an upright gold label and a grid icon, so it stands apart from other scratch tabs. */
 .ets-tab-wrap.is-spritesheet { font-style: normal; opacity: 1; }
 .ets-tab-wrap.is-spritesheet .ets-tab-label {
   color: var(--sts-gold);
@@ -108,8 +115,8 @@
   font-size: 9px;
   margin-right: 2px;
 }
-/* Drag-to-reorder feedback. The is-drop-before / is-drop-after pseudo-
- * borders point at the gap the dropped tab will land in. */
+/* Drag-to-reorder feedback. The is-drop-before / is-drop-after pseudo-element borders point at the gap the dropped
+ * tab will land in. */
 .ets-tab-wrap.is-dragging { opacity: 0.4; }
 .ets-tab-wrap.is-drop-before { box-shadow: inset 2px 0 0 0 var(--sts-gold); }
 .ets-tab-wrap.is-drop-after  { box-shadow: inset -2px 0 0 0 var(--sts-gold); }
@@ -124,7 +131,7 @@
   border: none;
   box-shadow: none;
   padding: 2px 10px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   font-size: 9.5px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -132,9 +139,9 @@
   white-space: nowrap;
   transition: color 80ms ease;
 }
-.ets-tab-wrap:hover .ets-tab { color: var(--sts-tx); }
+.ets-tab-wrap:hover .ets-tab { color: var(--sts-text); }
 .ets-tab-wrap.is-active .ets-tab {
-  color: var(--sts-ttl);
+  color: var(--sts-text-bright);
   font-weight: 700;
 }
 .ets-tab-dirty {
@@ -149,13 +156,13 @@
   border: none;
   box-shadow: none;
   padding: 2px 8px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   cursor: var(--cursor-pointer);
   font-size: 10px;
 }
-.ets-tab-add:hover { color: var(--sts-tx); }
+.ets-tab-add:hover { color: var(--sts-text); }
 
-/* ---------- Class strip (top row — nests the variant tabs by Class) ---------- */
+/* ---------- Class strip: the top row, with each class's variant tabs under it ---------- */
 .ets-class-strip {
   display: flex;
   align-items: center;
@@ -169,12 +176,12 @@
 .ets-class-tab {
   appearance: none;
   flex: 0 0 auto;
-  background: var(--sts-rest);
+  background: var(--sts-tab-background);
   border: none;
   border-radius: 3px;
   box-shadow: none;
   padding: 3px 12px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -182,15 +189,14 @@
   white-space: nowrap;
   transition: background 80ms ease, color 80ms ease;
 }
-.ets-class-tab:hover { background: var(--sts-sel); color: var(--sts-tx); }
+.ets-class-tab:hover { background: var(--sts-highlight); color: var(--sts-text); }
 .ets-class-tab.is-active {
-  background: var(--sts-ctrl);
-  box-shadow: var(--sts-chip-fx);
-  color: var(--sts-ttl);
+  background: var(--sts-control-background);
+  box-shadow: var(--sts-chip-shadow);
+  color: var(--sts-text-bright);
   font-weight: 700;
 }
-/* The nested variant row sits flush under the class row and is indented so the
- * grouping reads as class → its variants. */
+/* The variant row sits right under the class row, indented to show its variants belong to the class. */
 .ets-class-strip + .ets-tabs-strip { padding-left: 31px; }
 
 /* ---------- Class / entry / type selectors row ---------- */
@@ -212,17 +218,17 @@
   font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
 }
 /* The system's stylesheet renders every dropdown list in the page and draws the chevron, so this control carries
  * neither its own arrow nor a stripped native widget. */
 .ets-tab-controls select {
-  background: var(--sts-field);
+  background: var(--sts-field-background);
   border: none;
   border-radius: 3px;
   box-shadow: none;
   box-sizing: border-box;
-  color: var(--sts-tx);
+  color: var(--sts-text);
   font-size: 11px;
   padding: 0 8px;
   width: 100%;
@@ -234,12 +240,11 @@
 }
 .ets-tab-controls select:disabled {
   opacity: 0.5;
-  color: var(--sts-mu);
-  cursor: var(--cursor-not-allowed);
+  color: var(--sts-text-muted);
+  cursor: not-allowed;
 }
-/* An option-less selector collapses to a bare dash rather than spelling out
- * why it is empty. */
-.ets-tab-controls select.is-empty { color: var(--sts-mu); }
+/* An option-less selector collapses to a bare dash rather than spelling out why it is empty. */
+.ets-tab-controls select.is-empty { color: var(--sts-text-muted); }
 
 .ets-tab-controls-acts {
   display: flex;
@@ -254,12 +259,12 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--sts-ctrl);
+  background: var(--sts-control-background);
   border: none;
   border-radius: 3px;
-  box-shadow: var(--sts-chip-fx);
+  box-shadow: var(--sts-chip-shadow);
   box-sizing: border-box;
-  color: var(--sts-tx);
+  color: var(--sts-text);
   height: 21px;
   min-height: 21px;
   padding: 0 11px;
@@ -270,23 +275,21 @@
   cursor: var(--cursor-pointer);
   transition: color 120ms ease;
 }
-.ets-submit { color: var(--sts-goldb); }
+.ets-submit { color: var(--sts-gold-bright); }
 .ets-submit:hover:not(:disabled),
 .ets-pane-toggle:hover,
-.ets-pane-show:hover { color: var(--sts-ttl); }
+.ets-pane-show:hover { color: var(--sts-text-bright); }
 .ets-submit:disabled {
   opacity: 0.5;
-  cursor: var(--cursor-not-allowed);
+  cursor: not-allowed;
 }
 .ets-pane-toggle i,
-.ets-pane-show i { font-size: 9px; color: var(--sts-mu); }
+.ets-pane-show i { font-size: 9px; color: var(--sts-text-muted); }
 
 /* ---------- Tab content area ----------
- * Layout-contained: the tab strips (top) and the footer (bottom) need to
- * stay pinned even when the in-tab content grows (a FECC side rail opens,
- * a long layers list appears, etc.). overflow:hidden + min-* on this
- * container clips overgrowth into the tab content's own scrollable region
- * instead of pushing the column siblings off-screen. */
+ * The tab strips above and the footer below stay in place when the tab's content grows, for example when a side
+ * panel opens or the layer list gets long. This container hides overflow and has zero minimums, so the content
+ * scrolls inside it instead of pushing the footer off screen. */
 .ets-tab-content {
   flex: 1 1 auto;
   display: flex;
@@ -307,9 +310,8 @@
 }
 .ets-tab-pane.is-active { display: flex; }
 
-/* Force the inner .ete-panes (a flex row of avatar / token + side rails)
- * to honour the tab content's box — without min-* it'll try to expand to
- * its intrinsic width and push the footer off the bottom. */
+/* The row of avatar pane, token pane and side rails fits the tab content's box. Without the zero minimums it would
+ * grow to fit its content and push the footer off screen. */
 .ets-tab-pane > .ete-panes {
   flex: 1 1 auto;
   min-height: 0;
@@ -317,9 +319,9 @@
   overflow: hidden;
 }
 
-/* Read-only avatar pane (every tab but the base one): the editing controls are
- * greyed and ignore the pointer, but the canvas stays crisp, since it shows the
- * actor's portrait (.ete-avatar-mirror). The JS also disables the form controls. */
+/* Read-only avatar pane, on every tab not pointed at the base token: the editing controls are greyed and ignore the
+ * pointer, but the canvas stays crisp, since it shows the actor's portrait (.ete-avatar-mirror). pane-layout.mjs also
+ * disables the pane's buttons and fields. */
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-toolbar,
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-tools,
 .ets-tab-pane.avatar-readonly .ete-pane[data-side="avatar"] .ete-layers,
@@ -331,8 +333,7 @@
   pointer-events: none;
 }
 
-/* Read-only copy of the actor's portrait, laid over the unused avatar canvas
- * on every tab but the base one. */
+/* Read-only copy of the actor's portrait, laid over the unused avatar canvas on every tab but the base one. */
 .ete-canvas-mount > .ete-avatar-mirror {
   position: absolute;
   inset: 0;
@@ -356,7 +357,7 @@
   gap: 9px;
   padding: 6px 15px 9px;
   font-size: 10.5px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   flex-shrink: 0;
 }
 
@@ -371,26 +372,26 @@
 }
 .ets-actor-switcher::-webkit-scrollbar { display: none; }
 
-/* The prefix pair rides the right edge with the filename it builds, so the two
- * read as one statement rather than as two ends of the row. */
+/* The prefix pair rides the right edge with the filename it builds, so the two read as one statement rather than as two
+ * ends of the row. */
 .ets-prefix-label {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-size: 9px;
   font-weight: 600;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   flex: 0 0 auto;
   margin-left: auto;
-  cursor: var(--cursor-help);
+  cursor: help;
 }
 .ets-prefix-input {
   appearance: none;
-  background: var(--sts-field);
+  background: var(--sts-field-background);
   border: none;
   border-radius: 3px;
   box-shadow: none;
   box-sizing: border-box;
-  color: var(--sts-tx);
+  color: var(--sts-text);
   font-size: 10.5px;
   font-family: monospace;
   height: 19px;
@@ -403,7 +404,7 @@
 .ets-filename-preview {
   font-family: monospace;
   font-size: 9.5px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -411,22 +412,22 @@
   min-width: 0;
 }
 
-/* Pip = wrapper around two sibling buttons (select-actor, close-actor). The
- * wrap owns the resting slot + active chip; the buttons are transparent. */
+/* Each actor pip wraps two buttons, select and close. The wrap draws the resting and active chip, and the buttons are
+ * transparent. */
 .ets-actor-pip-wrap {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  background: var(--sts-rest);
+  background: var(--sts-tab-background);
   border: none;
   border-radius: 3px;
   overflow: hidden;
   transition: background 80ms ease;
 }
-.ets-actor-pip-wrap:hover { background: var(--sts-sel); }
+.ets-actor-pip-wrap:hover { background: var(--sts-highlight); }
 .ets-actor-pip-wrap.is-active {
-  background: var(--sts-ctrl);
-  box-shadow: var(--sts-chip-fx);
+  background: var(--sts-control-background);
+  box-shadow: var(--sts-chip-shadow);
 }
 .ets-actor-pip {
   appearance: none;
@@ -437,16 +438,16 @@
   border: none;
   box-shadow: none;
   padding: 2px 4px 2px 8px;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   font-size: 10px;
   font-weight: 600;
   cursor: var(--cursor-pointer);
   transition: color 80ms ease;
   white-space: nowrap;
 }
-.ets-actor-pip:hover { color: var(--sts-tx); }
+.ets-actor-pip:hover { color: var(--sts-text); }
 .ets-actor-pip-wrap.is-active .ets-actor-pip {
-  color: var(--sts-ttl);
+  color: var(--sts-text-bright);
   font-weight: 700;
 }
 .ets-actor-pip img {
@@ -458,7 +459,13 @@
   image-rendering: pixelated;
   flex: 0 0 auto;
 }
-.ets-actor-pip-name { pointer-events: none; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ets-actor-pip-name {
+  pointer-events: none;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ets-actor-pip-close {
   appearance: none;
   display: inline-flex;
@@ -468,12 +475,12 @@
   background: transparent;
   border: none;
   box-shadow: none;
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   font-size: 9px;
   cursor: var(--cursor-pointer);
   transition: color 80ms ease;
 }
-.ets-actor-pip-close:hover { color: var(--sts-rustb); }
+.ets-actor-pip-close:hover { color: var(--sts-rust-bright); }
 
 /* ---------- Switch dialog ---------- */
 .ets-switch-dialog ul {
@@ -485,10 +492,9 @@
   font-size: 12px;
 }
 
-/* ---------- FECC rail extras (per-category split) ----------
- * The studio's rail holds a tab per part category plus Colour, Export and
- * Import, so it scrolls vertically and uses a smaller tab minimum. The
- * `.fecc-rail-spacer` pushes Export and Import to the bottom of the rail. */
+/* ---------- Side rail: a tab per part category ----------
+ * The studio's rail holds a tab per part category plus Colour, Export and Import, so it scrolls vertically and uses a
+ * smaller tab minimum. The `.fecc-rail-spacer` pushes Export and Import to the bottom of the rail. */
 .emblem-character-studio .fecc-rail {
   overflow-y: auto;
   scrollbar-width: none;

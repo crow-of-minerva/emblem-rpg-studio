@@ -1,8 +1,6 @@
-/** @layer utils */
-
 /*
- * Native-grid recovery for antialiased up-scales. CanvasView._analysePixelArt (editor/canvas-view.mjs) calls both
- * exports when the edge-fold result from pixel-art.mjs finds no grid or a noisy one.
+ * Native-grid recovery for antialiased up-scales. Pixel-art import (editor/pixel-art-import.mjs) falls back to it
+ * when the edge-fold result from pixel-art.mjs finds no grid or a noisy one.
  *
  * The edge-fold detector in pixel-art.mjs locks onto the hard block boundaries a nearest-neighbour up-scale leaves
  * behind. A bilinear, bicubic or blurred up-scale has no such boundaries: every native pixel becomes a ramp toward
@@ -70,7 +68,8 @@ function antialiasSampleLines(data, w, h, axis) {
 function antialiasCubic(t, B, C) {
   t = Math.abs(t);
   if (t < 1) return ((12 - 9 * B - 6 * C) * t * t * t + (-18 + 12 * B + 6 * C) * t * t + (6 - 2 * B)) / 6;
-  if (t < 2) return ((-B - 6 * C) * t * t * t + (6 * B + 30 * C) * t * t + (-12 * B - 48 * C) * t + (8 * B + 24 * C)) / 6;
+  if (t < 2) return ((-B - 6 * C) * t * t * t + (6 * B + 30 * C) * t * t + (-12 * B - 48 * C) * t
+    + (8 * B + 24 * C)) / 6;
   return 0;
 }
 
@@ -128,7 +127,11 @@ function antialiasOperator(len, N, phase, model) {
     }
     const first = i0 - taps / 2 + 1;
     let sum = 0;
-    for (let p = 0; p < taps; p++) { idx[o + p] = clamp(first + p); wt[o + p] = kernel(u - (first + p)); sum += wt[o + p]; }
+    for (let p = 0; p < taps; p++) {
+      idx[o + p] = clamp(first + p);
+      wt[o + p] = kernel(u - (first + p));
+      sum += wt[o + p];
+    }
     for (let p = 0; p < taps; p++) wt[o + p] /= sum;
   }
   return { N, len, taps, idx, wt, band: taps - 1 };
@@ -179,7 +182,8 @@ function antialiasSolveLine(op, L, buf, cells) {
     const o = x * taps, s = x * 4;
     for (let p = 0; p < taps; p++) {
       const c = idx[o + p] * 4, w = wt[o + p];
-      cells[c] += w * buf[s]; cells[c + 1] += w * buf[s + 1]; cells[c + 2] += w * buf[s + 2]; cells[c + 3] += w * buf[s + 3];
+      cells[c] += w * buf[s]; cells[c + 1] += w * buf[s + 1];
+      cells[c + 2] += w * buf[s + 2]; cells[c + 3] += w * buf[s + 3];
     }
   }
   for (let i = 0; i < N; i++) {
@@ -238,7 +242,7 @@ function antialiasModelError(lines, len, N, phase, model) {
  */
 function antialiasFitPhase(lines, len, N) {
   const k = len / N;
-  const sweep = (model, phase0, step, best) => {
+  const sweep = (model, step, best) => {
     for (let r = 0; r < ANTIALIAS_PHASE_REFINE; r++) {
       for (const phase of [best.phase - step, best.phase + step]) {
         const err = antialiasModelError(lines, len, N, phase, model);
@@ -254,13 +258,15 @@ function antialiasFitPhase(lines, len, N) {
     const err = antialiasModelError(lines, len, N, phase, ANTIALIAS_SWEEP_MODEL);
     if (err < coarse.err) coarse = { err, phase };
   }
-  coarse = sweep(ANTIALIAS_SWEEP_MODEL, coarse.phase, k / ANTIALIAS_PHASE_STEPS / 2, coarse);
+  coarse = sweep(ANTIALIAS_SWEEP_MODEL, k / ANTIALIAS_PHASE_STEPS / 2, coarse);
   let best = { err: Infinity, phase: coarse.phase, model: ANTIALIAS_SWEEP_MODEL };
   for (const model of Object.keys(ANTIALIAS_MODELS)) {
     const err = model === ANTIALIAS_SWEEP_MODEL ? coarse.err : antialiasModelError(lines, len, N, coarse.phase, model);
     if (err < best.err) best = { err, phase: coarse.phase, model };
   }
-  if (best.model !== ANTIALIAS_SWEEP_MODEL) best = { ...sweep(best.model, best.phase, k / ANTIALIAS_PHASE_STEPS / 4, best), model: best.model };
+  if (best.model !== ANTIALIAS_SWEEP_MODEL) {
+    best = { ...sweep(best.model, k / ANTIALIAS_PHASE_STEPS / 4, best), model: best.model };
+  }
   best.phase -= Math.round(best.phase / k) * k;
   return best;
 }
@@ -360,12 +366,8 @@ export function pixelArtFitAntialiasedAxes(data, w, h, hint = null) {
 /* -------------------------------------------- */
 
 /**
- * Recover the native cells of a fitted grid.
- *
- * A grid that fitted as a nearest up-scale is read by the centre median, which rejects noise better than a mean.
- * A smoothed one is recovered by inverting its up-scale, rows first and then columns, on premultiplied colour so
- * transparent margins contribute nothing. A cell whose recovered coverage is under half stays empty, as the centre
- * median's does.
+ * Recover the native cells of a fitted grid: a nearest up-scale by the centre median, a smoothed one by inverting its
+ * up-scale, rows then columns, on premultiplied colour. A recovered cell under half coverage stays empty.
  * @param {Uint8ClampedArray} data        Source pixels.
  * @param {number} w                      Source width.
  * @param {number} h                      Source height.

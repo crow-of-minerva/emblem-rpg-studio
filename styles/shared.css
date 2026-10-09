@@ -1,7 +1,7 @@
 /* ===========================================================
- * Emblem Studio — shared tokens and controls
+ * Emblem RPG Studio: shared colours and controls
  * =========================================================== */
-/* Studio's shades of three system colours. They sit on Studio's own windows (the manual importer and the scene
+/* Studio's shades of three system colours. They sit on Studio's own windows (the Sprite Importer and the scene
  * crop bar included), so every other window keeps the system's colours. */
 .emblem-rpg-studio,
 .emblem-fecc-manual {
@@ -10,37 +10,52 @@
   --emblem-accent-tool: #d8b36a;
 }
 
-.emblem-rpg-studio {
-  --sts-ground: #24212d;
-  --sts-panel: #2e2a39;
-  --sts-card: #393446;
-  --sts-ctrl: #433e52;
-  --sts-field: #1b1923;
+/* Studio's colours, spacing and shadows. Besides Studio's windows they sit on the Sprite Importer dialog, and on
+ * the right-click menu and the dragged tone swatch, which are mounted on document.body outside any Studio window. */
+.emblem-rpg-studio,
+.emblem-fecc-manual,
+.sts-context-menu,
+.fecc-pz-floater {
+  /* Backgrounds: the window, a side panel, a card or menu inside one, an active tab or selected row, a text field. */
+  --sts-window-background: #24212d;
+  --sts-panel-background: #2e2a39;
+  --sts-card-background: #393446;
+  --sts-control-background: #433e52;
+  --sts-field-background: #1b1923;
 
-  --sts-tx: #e2dee8;
-  --sts-mu: #9992aa;
-  --sts-ttl: #f0edf4;
-  --sts-ptitle: #bfb8cd;
+  /* Text: body text, muted text and icons, the active tab and hovered text, and a pane or panel heading. */
+  --sts-text: #e2dee8;
+  --sts-text-muted: #9992aa;
+  --sts-text-bright: #f0edf4;
+  --sts-panel-title: #bfb8cd;
 
+  /* Accents: gold for headings, focus and drop targets, with a bright shade for primary buttons such as Save; red for
+   * the active tool or rail tab; teal for a spotlighted tone in the Sprite Importer; rust for delete and remove. */
   --sts-gold: #d8b36a;
-  --sts-goldb: #eccf90;
-  --sts-red: #b3574f;
-  --sts-redb: #c2635a;
+  --sts-gold-bright: #eccf90;
+  --sts-red-bright: #c2635a;
   --sts-teal: #8fd3cc;
-  --sts-tealb: #b8e6e0;
   --sts-rust: #b5766c;
-  --sts-rustb: #c98a80;
+  --sts-rust-bright: #c98a80;
 
-  --sts-sel: rgba(216, 179, 106, 0.08);
-  --sts-hair: rgba(255, 255, 255, 0.06);
-  --sts-rest: rgba(255, 255, 255, 0.025);
-  --sts-panel-fx: 0 2px 10px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --sts-card-fx: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --sts-chip-fx: 0 1px 0 rgba(0, 0, 0, 0.3);
+  /* The tint behind a hovered row or a drop target, a 1px divider line, and the resting fill of a tab or pill. */
+  --sts-highlight: rgba(216, 179, 106, 0.08);
+  --sts-divider: rgba(255, 255, 255, 0.06);
+  --sts-tab-background: rgba(255, 255, 255, 0.025);
 
+  /* Shadows: under a side panel, the top edge of a card, and under a button or tab. */
+  --sts-panel-shadow: 0 2px 10px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sts-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --sts-chip-shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+
+  /* The space between a window's panes and its side rails, and the light grey behind a canvas's art and a layer's
+   * thumbnail. */
   --sts-gap: 11px;
-  --sts-paper: #c7c9d8;
+  --sts-canvas-backdrop: #c7c9d8;
+}
 
+/* Studio's windows draw the system's accent colour in Studio's gold. */
+.emblem-rpg-studio {
   --emblem-accent: var(--sts-gold);
 }
 
@@ -72,31 +87,41 @@
 }
 
 .emblem-rpg-studio .window-title .sts-title-subject {
-  color: var(--sts-tx);
+  color: var(--sts-text);
   font-weight: 600;
   letter-spacing: 0.08em;
 }
 
 .emblem-rpg-studio .window-header .header-control {
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   background: transparent;
   border: none;
 }
 
 .emblem-rpg-studio .window-header .header-control:hover {
-  color: var(--sts-tx);
+  color: var(--sts-text);
   background: transparent;
 }
 
-/* ---------- Buttons ---------- */
-.emblem-rpg-studio .acp-btn {
+/* ---------- Buttons ----------
+ * Studio's own button classes, so a change to the system's stylesheet can't restyle Studio's windows. Every button
+ * starts centred on one line with a small icon. :where() gives those defaults no specificity, so any rule for a
+ * particular button or icon overrides them. */
+:where(.emblem-rpg-studio .sts-btn) {
+  justify-content: center;
+  white-space: nowrap;
+}
+
+:where(.emblem-rpg-studio .sts-btn i) { font-size: 9px; }
+
+.emblem-rpg-studio .sts-btn {
   align-items: center;
-  background: var(--sts-ctrl);
+  background: var(--sts-control-background);
   border: none;
   border-radius: 3px;
-  box-shadow: var(--sts-chip-fx);
+  box-shadow: var(--sts-chip-shadow);
   box-sizing: border-box;
-  color: var(--sts-tx);
+  color: var(--sts-text);
   cursor: var(--cursor-pointer);
   display: inline-flex;
   font-family: inherit;
@@ -111,35 +136,35 @@
   transition: color 0.15s ease, background 0.15s ease;
 }
 
-.emblem-rpg-studio .acp-btn:hover:not(:disabled) {
-  background: var(--sts-ctrl);
-  color: var(--sts-ttl);
+.emblem-rpg-studio .sts-btn:hover:not(:disabled) {
+  background: var(--sts-control-background);
+  color: var(--sts-text-bright);
 }
 
-.emblem-rpg-studio .acp-btn:disabled {
-  cursor: var(--cursor-not-allowed);
+.emblem-rpg-studio .sts-btn:disabled {
+  cursor: not-allowed;
   opacity: 0.4;
 }
 
-.emblem-rpg-studio .acp-btn-sm {
+.emblem-rpg-studio .sts-btn-sm {
   font-size: 9.5px;
   height: 20px;
   min-height: 20px;
   padding: 0 8px;
 }
 
-.emblem-rpg-studio .acp-btn-primary { color: var(--sts-goldb); }
-.emblem-rpg-studio .acp-btn-primary:hover:not(:disabled) { color: var(--sts-goldb); }
+.emblem-rpg-studio .sts-btn-primary { color: var(--sts-gold-bright); }
+.emblem-rpg-studio .sts-btn-primary:hover:not(:disabled) { color: var(--sts-gold-bright); }
 
-.emblem-rpg-studio .acp-btn-danger {
+.emblem-rpg-studio .sts-btn-danger {
   background: transparent;
   box-shadow: none;
   color: var(--sts-rust);
 }
 
-.emblem-rpg-studio .acp-btn-danger:hover:not(:disabled) {
+.emblem-rpg-studio .sts-btn-danger:hover:not(:disabled) {
   background: transparent;
-  color: var(--sts-rustb);
+  color: var(--sts-rust-bright);
 }
 
 
@@ -148,25 +173,22 @@
 .emblem-rpg-studio input[type="search"],
 .emblem-rpg-studio input[type="number"],
 .emblem-rpg-studio select {
-  background: var(--sts-field);
+  background: var(--sts-field-background);
   border: none;
   border-radius: 3px;
   box-shadow: none;
   box-sizing: border-box;
-  color: var(--sts-tx);
+  color: var(--sts-text);
   font-family: inherit;
   outline: none;
 }
 
-/* ---------- No focus state ----------
- * Studio draws no focus ring. Core's `button:focus` adds an outline and a
- * shadow (`button:hover` a shadow), so both are removed from every focusable
- * control, and the chip buttons below put their resting shadow back. */
+/* ---------- Focus ring ----------
+ * Core's `button:focus` adds an outline and a shadow (`button:hover` a shadow), so both are removed from every
+ * focusable control, and the chip buttons below put their resting shadow back. Keyboard focus still gets a ring. */
 .emblem-rpg-studio button:focus,
-.emblem-rpg-studio button:focus-visible,
 .emblem-rpg-studio button:hover,
 .emblem-rpg-studio input:focus,
-.emblem-rpg-studio input:focus-visible,
 .emblem-rpg-studio select:focus,
 .emblem-rpg-studio textarea:focus,
 .emblem-rpg-studio a:focus,
@@ -177,8 +199,15 @@
   box-shadow: none !important;
 }
 
-.emblem-rpg-studio .acp-btn:focus,
-.emblem-rpg-studio .acp-btn:hover,
+/* A thin gold outline for keyboard focus only, like core's 1px button focus outline. The :is() list keeps this
+ * selector at least as specific as the removal rule above, so its !important wins. */
+.emblem-rpg-studio :is(button, input, select, textarea, a, summary, details, [tabindex]):focus-visible {
+  outline: 1px solid var(--sts-gold) !important;
+  outline-offset: 1px;
+}
+
+.emblem-rpg-studio .sts-btn:focus,
+.emblem-rpg-studio .sts-btn:hover,
 .emblem-rpg-studio .ets-submit:focus,
 .emblem-rpg-studio .ets-submit:hover,
 .emblem-rpg-studio .ets-pane-toggle:focus,
@@ -191,32 +220,107 @@
 .emblem-rpg-studio .fecc-tab.is-active:hover,
 .emblem-rpg-studio .fecc-pz-btn:focus,
 .emblem-rpg-studio .fecc-pz-btn:hover {
-  box-shadow: var(--sts-chip-fx) !important;
+  box-shadow: var(--sts-chip-shadow) !important;
 }
 
 /* Toolbar icon buttons show state by colour only: no background or shadow. */
-.emblem-rpg-studio .ete-toolbar .acp-btn:focus,
-.emblem-rpg-studio .ete-toolbar .acp-btn:hover,
-.emblem-rpg-studio .ete-footer .acp-btn:focus,
-.emblem-rpg-studio .ete-footer .acp-btn:hover,
-.emblem-rpg-studio .acp-btn-danger:focus,
-.emblem-rpg-studio .acp-btn-danger:hover,
+.emblem-rpg-studio .ete-toolbar .sts-btn:focus,
+.emblem-rpg-studio .ete-toolbar .sts-btn:hover,
+.emblem-rpg-studio .ete-footer .sts-btn:focus,
+.emblem-rpg-studio .ete-footer .sts-btn:hover,
+.emblem-rpg-studio .sts-btn-danger:focus,
+.emblem-rpg-studio .sts-btn-danger:hover,
 .emblem-rpg-studio .ete-tool-btn:focus,
 .emblem-rpg-studio .fecc-rail-tab:focus {
   background: transparent;
   box-shadow: none !important;
 }
 
+/* ---------- Dialogs ----------
+ * Studio's dialogs are core DialogV2 windows outside Studio's root class, so these rules are not scoped to it. */
+
+/* A smaller, muted note under a dialog's question. */
+.sts-dialog-note {
+  font-size: 0.9em;
+  opacity: 0.75;
+}
+
+/* ---------- Right-click menu ----------
+ * Studio's right-click menu (editor/context-menu.mjs). It is mounted on the document body, so a panel's
+ * overflow: hidden doesn't clip it, and the opener sets its position and stacking order inline. */
+.sts-context-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 180px;
+  background: var(--sts-card-background);
+  border: none;
+  border-radius: 5px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  padding: 4px;
+  font-size: 11px;
+  color: var(--sts-text);
+  font-family: 'Signika', sans-serif;
+}
+.sts-context-menu-header {
+  padding: 7px 8px 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--sts-gold);
+  border: none;
+  margin: -4px -4px 4px;
+  word-break: break-all;
+  border-radius: 5px 5px 0 0;
+  background: rgba(216, 179, 106, 0.06);
+}
+.sts-context-menu-section {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sts-text-muted);
+  padding: 5px 8px 3px;
+}
+.sts-context-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 4px 0;
+}
+.sts-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: var(--cursor-pointer);
+  color: inherit;
+  font-size: 11px;
+  border-radius: 3px;
+  flex-direction: row;
+  justify-content: flex-start;
+}
+.sts-context-menu-item i { width: 14px; color: var(--sts-text-muted); }
+.sts-context-menu-item:hover { background: rgba(216, 179, 106, 0.1); color: var(--sts-text-bright); }
+.sts-context-menu-item:hover i { color: var(--sts-gold-bright); }
+.sts-context-menu-item.is-danger:hover { background: rgba(181, 118, 108, 0.18); color: var(--sts-rust-bright); }
+.sts-context-menu-item.is-danger:hover i { color: var(--sts-rust-bright); }
+.sts-context-menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+.sts-context-menu-item:disabled:hover { background: transparent; color: inherit; }
+.sts-context-menu-item:disabled:hover i { color: var(--sts-text-muted); }
+
 /* ---------- Scene crop bar ----------
- * Mounted on the document body while the canvas region tool is running, so it
- * clears the sheet that launched it and the canvas it is drawn over. The
- * stacking order is set inline, from the rendered windows. */
+ * Mounted on the document body while the canvas region tool is running, so it clears the sheet that launched it and the
+ * canvas it is drawn over. The stacking order is set inline, from the rendered windows. */
 .emblem-scene-crop-bar {
   align-items: center;
-  background: var(--sts-panel);
+  background: var(--sts-panel-background);
   border-radius: 4px;
-  box-shadow: var(--sts-panel-fx);
-  color: var(--sts-tx);
+  box-shadow: var(--sts-panel-shadow);
+  color: var(--sts-text);
   display: flex;
   font-family: var(--font-primary, sans-serif);
   gap: 8px;
@@ -243,7 +347,7 @@
 .emblem-scene-crop-no:hover:not(:disabled) { color: var(--emblem-delete-hover); }
 
 .emblem-scene-crop-legend {
-  color: var(--sts-mu);
+  color: var(--sts-text-muted);
   font-size: 10.5px;
   font-style: italic;
   padding-left: 4px;

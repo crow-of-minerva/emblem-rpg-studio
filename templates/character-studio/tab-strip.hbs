@@ -1,0 +1,22 @@
+{{!-- The tab strip for the active class row. The wrapper is draggable while its inner button is not, so a click
+     selects the tab instead of starting a reorder drag. --}}
+{{#each tabs}}
+<div class="ets-tab-wrap{{#if active}} is-active{{/if}}{{#unless bound}} is-unbound{{/unless}}
+  {{~#if sheet}} is-spritesheet{{/if}}" data-tab-id="{{id}}" draggable="true">
+  <button type="button" class="ets-tab" data-action="selectTab" data-tab-id="{{id}}"
+    data-tooltip-text="{{fullLabel}}" draggable="false">
+    {{#if dirty}}<span class="ets-tab-dirty">●</span>{{/if}}
+    <span class="ets-tab-label">{{#if sheet}}<i class="fas fa-table-cells"></i> {{/if}}{{label}}</span>
+  </button>
+</div>
+{{/each}}
+{{#if showNewTab}}
+<button type="button" class="ets-tab-add" data-action="newTab"
+  data-tooltip="New tab"><i class="fas fa-plus"></i></button>
+{{/if}}
+{{#if showSheet}}
+<button type="button" class="ets-tab-add ets-tab-spritesheet" data-action="createSpritesheet"
+  data-tooltip="Create a spritesheet: token layers on one grid"><i class="fas fa-table-cells"></i></button>
+{{/if}}
+<button type="button" class="ets-tab-add ets-tab-open-all" data-action="openAllVariants"
+  data-tooltip="Open all saved token variants as tabs"><i class="fas fa-images"></i></button>

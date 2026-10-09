@@ -1,6 +1,10 @@
-// @ts-check
-/** @layer foundry */
+/*
+ * Asking the system to show newly saved art without a reload: redrawing an actor's tokens and its open Actor
+ * Control Panel, and opening that panel from Character Studio.
+ */
+
 import { createStudioNotifier } from './notify.mjs';
+import { openControlPanel, refreshAuthoringPanel, refreshTokenArt } from './system-bridge.mjs';
 
 /* -------------------------------------------- */
 /*  Reporting                                   */
@@ -13,23 +17,15 @@ const notify = createStudioNotifier(import.meta.url);
 
 /**
  * Show newly saved token art without a reload: the system's `presentation.tokenArt.refresh` redraws the actor's
- * tokens and its Control Panel, then the sheet re-renders and each placed token refreshes. Called by Character
- * Studio after a token save or clear.
+ * tokens and its Control Panel, then the sheet re-renders and each placed token refreshes.
  */
 export async function refreshActorTokenArt(actor) {
-  const refresh = game.emblemRpg?.api?.presentation?.tokenArt?.refresh;
-  if (typeof refresh === 'function') {
-    try { await refresh(actor.uuid, { force: true }); } catch (_) {
-      notify.failure('refreshActorTokenArt failed', _);
-    }
+  try { await refreshTokenArt(actor.uuid, { force: true }); } catch (error) {
+    notify.failure(`The system could not redraw the tokens of ${actor.name} with the new art.`, error);
   }
-  try { actor.sheet?.render?.(false); } catch (_) {
-    notify.failure('refreshActorTokenArt failed', _);
-  }
+  actor.sheet?.render?.();
   for (const token of actor.getActiveTokens?.() ?? []) {
-    try { token.renderFlags?.set?.({ refresh: true, refreshShape: true }); } catch (_) {
-      notify.failure('refreshActorTokenArt failed', _);
-    }
+    token.renderFlags?.set?.({ refresh: true, refreshShape: true });
   }
   return undefined;
 }
@@ -38,35 +34,22 @@ export async function refreshActorTokenArt(actor) {
  * Ask the system to redraw the actor's open Control Panel after an avatar save. Returns whether it did.
  */
 export function refreshActorAuthoringPanel(actor) {
-  const refresh = game.emblemRpg?.api?.presentation?.tokenArt?.refreshAuthoringPanel;
-  if (typeof refresh !== 'function') return false;
-  try { return refresh(actor.uuid) === true; } catch (_) {
-    notify.failure('refreshActorAuthoringPanel failed', _);
+  try { return refreshAuthoringPanel(actor.uuid); } catch (error) {
+    notify.failure(`The system could not redraw the Control Panel of ${actor.name}.`, error);
     return false;
   }
 }
 
 /**
- * Open the Actor Control Panel for an actor, from Character Studio's Control Panel header button.
- *
- * The system exposes the panel only as the character sheet's `openControlPanel` header action, so that handler is
- * run against the sheet instance, which need not be rendered. A sheet without the action opens itself instead.
+ * Open the Actor Control Panel for an actor, from Character Studio's Control Panel header button. The system has a
+ * Control Panel only for a Character, so a Vendor or Convoy opens its own sheet instead.
  * @param {Actor} actor
- * @returns {*}
  */
 export function openActorConfiguration(actor) {
-  const sheet = actor.sheet;
-  const openPanel = sheet?.options?.actions?.openControlPanel;
-  const handler = typeof openPanel === 'function' ? openPanel : openPanel?.handler;
-  if (typeof handler === 'function') {
-    try {
-      const panel = handler.call(sheet);
-      if (panel) return panel;
-      notify.warn('You may not open the Control Panel for ' + actor.name + '.');
-      return null;
-    } catch (_) {
-      notify.failure('openActorConfiguration failed', _);
-    }
+  if (actor.type !== 'Character') return void actor.sheet?.render({ force: true });
+  try {
+    if (!openControlPanel(actor.uuid)) notify.warn('You may not open the Control Panel for ' + actor.name + '.');
+  } catch (error) {
+    notify.failure(`The system could not open the Control Panel for ${actor.name}.`, error);
   }
-  return sheet?.render?.({ force: true });
 }

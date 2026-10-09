@@ -2,10 +2,12 @@
   "id": "emblem-rpg-studio",
   "title": "Emblem RPG Studio",
   "description": "Actor-sprite and item-art production tools for Emblem RPG.",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "manifest": "https://github.com/crow-of-minerva/emblem-rpg-studio/releases/latest/download/module.json",
-  "download": "https://github.com/crow-of-minerva/emblem-rpg-studio/releases/download/v1.0.1/emblem-rpg-studio.zip",
+  "download": "https://github.com/crow-of-minerva/emblem-rpg-studio/releases/download/v1.0.3/emblem-rpg-studio.zip",
   "license": "LICENSE",
+  "url": "https://github.com/crow-of-minerva/emblem-rpg-studio",
+  "bugs": "https://github.com/crow-of-minerva/emblem-rpg-studio/issues",
   "compatibility": {
     "minimum": "14",
     "verified": "14"
@@ -16,6 +18,8 @@
   "styles": [
     "styles/shared.css",
     "styles/character-studio.css",
+    "styles/editor.css",
+    "styles/fecc-panels.css",
     "styles/sprite-studio.css"
   ],
   "authors": [
@@ -36,7 +40,7 @@
         "id": "emblem-rpg",
         "type": "system",
         "compatibility": {
-          "minimum": "1.0.1"
+          "minimum": "1.0.3"
         },
         "manifest": "https://github.com/crow-of-minerva/emblem-rpg/releases/latest/download/system.json"
       }

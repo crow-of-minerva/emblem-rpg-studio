@@ -1,0 +1,53 @@
+{{!-- The tool rail beside an editor canvas, in Character Studio's panes and in Sprite Studio. A button with data-tool
+     picks a canvas tool, and the others act once. editor/tool-rail.mjs wires every button with its own click
+     listener, so none is in either window's actions table. With layerTools set, the rail adds Character Studio's
+     layer copy, paste and new blank layer. Each tool's key in its tooltip is its key in TOOL_HOTKEYS. --}}
+<div class="ete-tools" data-tool-rail>
+  <button type="button" class="ete-tool-btn" data-tool="rect"
+    data-tooltip="Rectangle select. Press M. Hold Alt to add to the selection or Ctrl to take from it.">
+    <i class="fas fa-vector-square"></i>
+  </button>
+  <button type="button" class="ete-tool-btn" data-tool="wand"
+    data-tooltip="Magic wand. Press W. Hold Alt to add to the selection or Ctrl to take from it.">
+    <i class="fas fa-wand-magic-sparkles"></i>
+  </button>
+  <button type="button" class="ete-tool-btn is-active" data-tool="pan"
+    data-tooltip="Pan or move a layer. Press V."><i class="fas fa-hand"></i></button>
+  <button type="button" class="ete-tool-btn" data-tool="move"
+    data-tooltip="Move the selection. Press T."><i class="fas fa-arrows-up-down-left-right"></i></button>
+  <button type="button" class="ete-tool-btn" data-tool="brush"
+    data-tooltip="Brush. Press B."><i class="fas fa-paintbrush"></i></button>
+  <button type="button" class="ete-tool-btn ete-tool-brush-color" data-action="brushColor"
+    data-tooltip="Brush colour"><span class="ete-tool-swatch-inner is-eraser"></span></button>
+  <button type="button" class="ete-tool-btn" data-tool="fill"
+    data-tooltip="Fill a colour region. Press G."><i class="fas fa-fill-drip"></i></button>
+  <button type="button" class="ete-tool-btn" data-tool="line"
+    data-tooltip="Draw a line. Press L."><i class="fas fa-slash"></i></button>
+  <span class="ete-tool-spacer"></span>
+  <button type="button" class="ete-tool-btn" data-action="copySelection"
+    data-tooltip="Copy the selected pixels. Press Ctrl+C."><i class="fas fa-clipboard"></i></button>
+  <button type="button" class="ete-tool-btn ete-tool-cut" data-tool="cut"
+    data-tooltip="Cut the selection. Press Ctrl+X."><i class="fas fa-scissors"></i></button>
+  <button type="button" class="ete-tool-btn" data-action="pasteSelection"
+    data-tooltip="Paste pixels as a new layer. Press Ctrl+V."><i class="fas fa-clipboard-check"></i></button>
+  <button type="button" class="ete-tool-btn" data-action="rotateSelection"
+    data-tooltip="Rotate the selection 15°, or 90° with Shift. The square bracket keys turn it either way.">
+    <i class="fas fa-rotate"></i>
+  </button>
+  <button type="button" class="ete-tool-btn" data-tool="deselect"
+    data-tooltip="Clear the selection. Press Esc."><i class="fas fa-ban"></i></button>
+  {{#if layerTools}}
+  <span class="ete-tool-spacer"></span>
+  <button type="button" class="ete-tool-btn" data-action="copyLayer"
+    data-tooltip="Copy layer"><i class="fas fa-copy"></i></button>
+  <button type="button" class="ete-tool-btn" data-action="pasteLayer"
+    data-tooltip="Paste layer"><i class="fas fa-paste"></i></button>
+  <button type="button" class="ete-tool-btn" data-action="addBlankLayer"
+    data-tooltip="New blank layer"><i class="fas fa-plus"></i></button>
+  {{/if}}
+  <span class="ete-tool-spacer"></span>
+  <button type="button" class="ete-tool-btn ete-tool-history" data-action="undo"
+    data-tooltip="Undo. Press Ctrl+Z."><i class="fas fa-rotate-left"></i></button>
+  <button type="button" class="ete-tool-btn ete-tool-history" data-action="redo"
+    data-tooltip="Redo. Press Ctrl+Y or Ctrl+Shift+Z."><i class="fas fa-rotate-right"></i></button>
+</div>

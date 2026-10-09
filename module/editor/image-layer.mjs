@@ -1,4 +1,7 @@
-/** @layer editor */
+/*
+ * One layer of the editing canvas (canvas-view.mjs): its image, its transform and what it needs to be recoloured.
+ */
+
 /* -------------------------------------------- */
 
 /**
@@ -35,14 +38,37 @@ export class ImageLayer {
     this.feccType = opts.feccType ?? null;
     this.feccName = opts.feccName ?? null;
     // A custom part keeps its world URL, since only shipped parts can be found again from the part name.
-    this._sourceUrl = opts.sourceUrl ?? null;
+    this.sourceUrl = opts.sourceUrl ?? null;
     // Cloned, so editing this layer's palette never changes a shared template's.
-    this._feccPalette = opts.palette
-      ? JSON.parse(JSON.stringify(opts.palette))
+    this.palette = opts.palette
+      ? structuredClone(opts.palette)
       : null;
-    // The recoloured canvas, cached by palette hash.
-    this._recolourCacheKey = null;
-    this._recolourCache    = null;
+    // Whether the pixels are the user's own work rather than a copy of a part template. Painting, a selection tool,
+    // a paste or an import sets it. It is saved with the layer, and the parts library never replaces an edited layer
+    // on a part swap.
+    this.edited = false;
+    // The scale and palette the layer had when CanvasView#addImageLayer added it, as `{ scale, paletteHash }`, or
+    // null for a layer made another way (duplicate, merge down). The parts library compares them to see whether the
+    // user has changed the layer since.
+    this.pristine = null;
+    // The recoloured canvas and the palette and part type it was made for. recolourLayer
+    // (character/fecc/fecc-recolour.mjs) fills them in, and draw uses the canvas in place of the source image.
+    this.recolourCacheKey = null;
+    this.recolourCache    = null;
+    // The layer row's thumbnail URL, which CanvasView caches here.
+    this.thumbCache = null;
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Call after writing to this layer's pixels: the recolour cache is keyed by palette only, so it would keep showing
+   * the old pixels. Drops the recoloured canvas and the row thumbnail, which are rebuilt on next use.
+   */
+  pixelsChanged() {
+    this.recolourCacheKey = null;
+    this.recolourCache = null;
+    this.thumbCache = null;
   }
 
   /* -------------------------------------------- */
@@ -84,14 +110,25 @@ export class ImageLayer {
     if (!this.image || !this.visible) return;
     ctx.save();
     ctx.globalAlpha = this.opacity;
-    ctx.translate(canvasSize / 2 + this.x, canvasSize / 2 + this.y);
-    ctx.rotate(this.rotation);
-    const sx = this.scale * (this.flipX ? -1 : 1);
-    const sy = this.scale * (this.flipY ? -1 : 1);
-    ctx.scale(sx, sy);
-    const src = this._recolourCache ?? this.image;
+    this.applyDrawTransform(ctx, canvasSize);
+    const src = this.recolourCache ?? this.image;
     ctx.drawImage(src, -this.width / 2, -this.height / 2);
     ctx.restore();
+  }
+
+  /* -------------------------------------------- */
+
+  /**
+   * Move a context into the layer's own space: the origin at the layer's centre, then its rotation, scale and flip.
+   * Drawing at (-width / 2, -height / 2) then puts the layer's top-left pixel where `draw` puts it. Call it between
+   * ctx.save() and ctx.restore().
+   * @param {CanvasRenderingContext2D} ctx          Target context.
+   * @param {number} canvasSize                     The composition's size.
+   */
+  applyDrawTransform(ctx, canvasSize) {
+    ctx.translate(canvasSize / 2 + this.x, canvasSize / 2 + this.y);
+    ctx.rotate(this.rotation);
+    ctx.scale(this.scale * (this.flipX ? -1 : 1), this.scale * (this.flipY ? -1 : 1));
   }
 
   /* -------------------------------------------- */
@@ -124,7 +161,7 @@ export class ImageLayer {
   /**
    * The layer-image pixel that the transform places at a given canvas pixel: the inverse of `draw`, with the same
    * arithmetic as the hit test. The pixel tools reach layer pixels through here (via
-   * `CanvasView#_canvasCellToLayer`), so a rotated or flipped layer is painted where the cursor is.
+   * `CanvasView#toLayerCell`), so a rotated or flipped layer is painted where the cursor is.
    * @param {number} px                                     Canvas x.
    * @param {number} py                                     Canvas y.
    * @param {number} canvasSize                             The composition's size.

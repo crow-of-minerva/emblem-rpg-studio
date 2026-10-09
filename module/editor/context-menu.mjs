@@ -1,10 +1,9 @@
-/** @layer editor */
 /*
- * Studio's right-click menu, used by Character Studio (actor pips, tabs, layer rows and pixel selections) and by the
- * parts library. Only one menu is open at a time. It is styled by the `.fecc-tok-ctx*` rules in
- * styles/sprite-studio.css.
+ * Studio's right-click menu. Only one menu is open at a time, and it is mounted on the document body of the main
+ * window. It is styled by the `.sts-context-menu*` rules in styles/shared.css.
  */
 import { createStudioNotifier } from '../foundry/notify.mjs';
+import { zIndexAboveWindows } from '../utils/window-stacking.mjs';
 
 /* -------------------------------------------- */
 /*  Reporting                                   */
@@ -17,7 +16,7 @@ const notify = createStudioNotifier(import.meta.url);
  * The open menu's dismissal listeners, or null. Opening a new menu closes the previous one first.
  * @type {object|null}
  */
-let _open = null;
+let openMenuListeners = null;
 
 /* -------------------------------------------- */
 /*  Menu                                        */
@@ -25,30 +24,23 @@ let _open = null;
 
 /**
  * Close whatever menu is open and remove its dismissal listeners. Menus are found by class rather than through
- * `_open`, so a menu left behind by an unexpected teardown is removed too.
+ * `openMenuListeners`, so a menu left behind by an unexpected teardown is removed too.
  */
 export function closeStudioContextMenu() {
-  document.querySelectorAll('.fecc-tok-ctx').forEach(el => el.remove());
-  if (_open) {
-    for (const [target, type, capture] of _open.bindings) {
-      target.removeEventListener(type, _open.dismiss, capture);
+  document.querySelectorAll('.sts-context-menu').forEach(el => el.remove());
+  if (openMenuListeners) {
+    for (const [target, type, capture] of openMenuListeners.bindings) {
+      target.removeEventListener(type, openMenuListeners.dismiss, capture);
     }
-    _open = null;
+    openMenuListeners = null;
   }
 }
 
 /* -------------------------------------------- */
 
 /**
- * Open the studio's context menu at a point.
- *
- * The menu is mounted on the document body so the studio's overflow-hidden ancestors can't clip it. Its z-index is
- * set one above the highest rendered window, because ApplicationV2 windows change their inline z-index as they are
- * focused, and a fixed value would eventually put the menu behind the window.
- *
- * After mounting, the menu is measured and moved back inside the viewport if it would overflow an edge. A click
- * elsewhere, Escape, scroll, resize or window blur closes it. A failed action is reported through `notify.failure`,
- * since the menu has already closed.
+ * Open the studio's context menu at a point, on the document body and stacked above every Foundry window. It is kept
+ * inside the viewport and closes on a click elsewhere, Escape, scroll, resize or window blur.
  * @param {string} innerHTML              The menu's contents.
  * @param {number} clientX                Pointer x.
  * @param {number} clientY                Pointer y.
@@ -57,13 +49,10 @@ export function closeStudioContextMenu() {
 export function openStudioContextMenu(innerHTML, clientX, clientY, onAction) {
   closeStudioContextMenu();
   const menu = document.createElement('div');
-  menu.className = 'fecc-tok-ctx';
+  menu.className = 'sts-context-menu';
   menu.style.left = `${clientX}px`;
   menu.style.top = `${clientY}px`;
-  const windowZ = [...document.querySelectorAll('.application')]
-    .map(element => Number.parseInt(getComputedStyle(element).zIndex, 10))
-    .filter(Number.isFinite);
-  menu.style.zIndex = String(Math.max(100, ...windowZ) + 1);
+  menu.style.zIndex = String(zIndexAboveWindows());
   menu.innerHTML = innerHTML;
   menu.addEventListener('mousedown', (e) => e.stopPropagation());
   menu.querySelectorAll('[data-action]').forEach(btn => {
@@ -73,8 +62,10 @@ export function openStudioContextMenu(innerHTML, clientX, clientY, onAction) {
       closeStudioContextMenu();
       try {
         await onAction(btn.dataset.action, btn);
-      } catch (err) {
-        notify.failure('Action failed.', err);
+      } catch (error) {
+        const label = btn.textContent.replace(/\s+/g, ' ').trim().replace(/[….]+$/, '');
+        notify.failure(label ? `The menu choice ${label} could not be completed.`
+          : 'That menu choice could not be completed.', error);
       }
     });
   });
@@ -84,10 +75,10 @@ export function openStudioContextMenu(innerHTML, clientX, clientY, onAction) {
   if (rect.bottom > window.innerHeight) menu.style.top = `${Math.max(0, clientY - rect.height)}px`;
   const dismiss = (ev) => {
     if (ev.type === 'keydown' && ev.key !== 'Escape') return;
-    if (ev.target?.closest?.('.fecc-tok-ctx')) return;
+    if (ev.target?.closest?.('.sts-context-menu')) return;
     closeStudioContextMenu();
   };
-  _open = {
+  openMenuListeners = {
     dismiss,
     bindings: [
       [document, 'mousedown', true],
@@ -97,7 +88,7 @@ export function openStudioContextMenu(innerHTML, clientX, clientY, onAction) {
       [window,   'blur',      false]
     ]
   };
-  for (const [target, type, capture] of _open.bindings) {
+  for (const [target, type, capture] of openMenuListeners.bindings) {
     target.addEventListener(type, dismiss, capture);
   }
 }

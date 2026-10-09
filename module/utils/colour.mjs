@@ -1,4 +1,7 @@
-/** @layer utils */
+/*
+ * Colour helpers: hex and RGB, HSL, the distance between two hues, the tone highlight colour, and checking a
+ * palette's colours.
+ */
 
 /**
  * Parse a six-digit hex colour, with or without its hash.
@@ -84,7 +87,6 @@ const TONE_BRIGHT_LUMA = 0.65;
 
 /**
  * The colour to flash a tone's own pixels in, chosen so the highlight can't be mistaken for the tone it marks.
- * CanvasView uses it for the Recolour panel's tone highlight.
  * @param {{r: number, g: number, b: number}|null} rgb    The tone as it is painted.
  * @returns {{r: number, g: number, b: number}}           White, or red on a bright tone, or green on a red one.
  */
@@ -103,7 +105,7 @@ export function toneHighlightColour(rgb) {
 
 /**
  * Throw if a palette's colours aren't a hex outline and RGB shades from 0 to 255. Checked when a project file or a
- * stored layer payload is loaded (fecc-presets.mjs and Character Studio's _applyLayerPayload).
+ * stored layer payload is loaded (character/window/projects.mjs and applyLayerPayload in editor/layer-codec.mjs).
  */
 export function validatePaletteColours(palette) {
   if (palette == null) return;
